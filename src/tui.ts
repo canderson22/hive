@@ -1,10 +1,12 @@
 // src/tui.ts — dashboard rendering, key dispatch, dialog flows
 
 import * as clack from "@clack/prompts";
-import type { Config, State, Status, Task, TaskStatus } from "./types.ts";
+import type { Config, PrInfo, State, Status, Task, TaskStatus } from "./types.ts";
 import { pollAll } from "./monitor.ts";
 import { attachSession, hasSession } from "./tmux.ts";
-import { closeTask, createTask, openEditor, restartTask } from "./tasks.ts";
+import { closeTask, createTask, importTask, openEditor, restartTask } from "./tasks.ts";
+import { createPr, openPrInBrowser } from "./pr.ts";
+import { repoNameFromUrl } from "./paths.ts";
 import { scanDirectory } from "./git.ts";
 import { run } from "./run.ts";
 import { loadConfig, loadState, saveConfig } from "./config.ts";
@@ -27,14 +29,26 @@ const POLL_INTERVAL_MS = 1500;
 
 // --- Rendering (exported for testing) ---
 
-export function renderTaskLine(task: Task, status: TaskStatus, selected: boolean): string {
+export function renderTaskLine(
+  task: Task,
+  status: TaskStatus,
+  selected: boolean,
+  multiRepo: boolean,
+  prInfo?: PrInfo,
+): string {
   const cursor = selected ? ">" : " ";
   const icon = statusColor(status.status, statusIcon(status.status));
-  const name = selected ? bold(task.id) : task.id;
+
+  const displayName = multiRepo && task.repoDisplayName
+    ? `${task.repoDisplayName}/${task.id}`
+    : task.id;
+  const name = selected ? bold(displayName) : displayName;
+
+  const pr = prInfo ? dim(` #${prInfo.number} ${prInfo.state}`) : "";
   const snippet = status.snippet ? dim(status.snippet) : "";
 
-  // Pad name to 24 chars for alignment
-  const paddedName = name + " ".repeat(Math.max(0, 24 - stripAnsi(name).length));
+  const nameWithPr = name + pr;
+  const paddedName = nameWithPr + " ".repeat(Math.max(0, 30 - stripAnsi(nameWithPr).length));
 
   return `${cursor} ${icon} ${paddedName} ${snippet}`;
 }
@@ -63,6 +77,7 @@ export function renderDashboard(
   showAll: boolean,
   staleThresholdHours: number,
   waitingSince: Record<string, string>,
+  prCache: Record<string, PrInfo>,
 ): string {
   const lines: string[] = [];
   const now = Date.now();
@@ -84,6 +99,7 @@ export function renderDashboard(
   }
 
   const visibleTasks = showAll ? tasks : fresh;
+  const multiRepo = new Set(visibleTasks.map((t) => t.repo)).size > 1;
 
   lines.push("");
   lines.push(
@@ -102,7 +118,9 @@ export function renderDashboard(
   for (let i = 0; i < visibleTasks.length; i++) {
     const task = visibleTasks[i];
     const status = statuses.get(task.id) ?? { status: "stopped" as Status, snippet: "" };
-    lines.push(renderTaskLine(task, status, i === selectedIndex));
+    const cacheKey = `${task.repo}:${task.branch}`;
+    const prInfo = prCache[cacheKey];
+    lines.push(renderTaskLine(task, status, i === selectedIndex, multiRepo, prInfo));
   }
 
   if (!showAll && stale.length > 0) {
@@ -113,7 +131,7 @@ export function renderDashboard(
   }
 
   lines.push("");
-  lines.push(dim("  n:new  d:close  r:restart  e:editor  enter:attach  ?:help  q:quit"));
+  lines.push(dim("  n:new  s:stack  i:import  p:pr  d:close  r:restart  e:editor  ?:help  q:quit"));
   lines.push("");
 
   return lines.join("\n");
@@ -329,6 +347,9 @@ function showHelp(): void {
   console.log("  j/k or arrows  Move selection");
   console.log("  Enter          Attach to session (restart if stopped)");
   console.log("  n              New task");
+  console.log("  s              Stack on selected task");
+  console.log("  i              Import existing branch");
+  console.log("  p              Create/view PR");
   console.log("  d              Close task");
   console.log("  r              Restart task");
   console.log("  e              Open editor in worktree");
@@ -388,6 +409,7 @@ export async function runDashboard(): Promise<void> {
       showAll,
       config.staleThresholdHours,
       state.waitingSince ?? {},
+      state.prCache ?? {},
     );
 
     if (render !== lastRender) {
@@ -522,6 +544,174 @@ export async function runDashboard(): Promise<void> {
         s.start("Restarting...");
         await restartTask(selectedTask, state, config);
         s.stop("Restarted");
+
+        enableRawMode();
+        write(hideCursor());
+        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+        lastRender = "";
+        await poll();
+        continue;
+      }
+
+      if (key.key === "p" && selectedTask) {
+        clearInterval(pollTimer);
+        disableRawMode();
+        write(showCursor());
+
+        const cacheKey = `${selectedTask.repo}:${selectedTask.branch}`;
+        const existing = state.prCache?.[cacheKey];
+
+        if (existing) {
+          clack.log.info(`PR #${existing.number} (${existing.state}) — opening in browser...`);
+          await openPrInBrowser(selectedTask);
+          await new Promise((r) => setTimeout(r, 1000));
+        } else {
+          const s = clack.spinner();
+          s.start("Creating PR...");
+          try {
+            const pr = await createPr(selectedTask, config.branchPrefix, state);
+            if (pr) {
+              s.stop(`Created PR #${pr.number}`);
+              clack.log.success(pr.url);
+              await new Promise((r) => setTimeout(r, 2000));
+            } else {
+              s.stop("PR created (could not fetch details)");
+            }
+          } catch (e) {
+            s.stop(`Failed: ${e}`);
+            clack.log.error(String(e));
+            await new Promise((r) => setTimeout(r, 3000));
+          }
+          state = await loadState();
+        }
+
+        enableRawMode();
+        write(hideCursor());
+        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+        lastRender = "";
+        await poll();
+        continue;
+      }
+
+      if (key.key === "s" && selectedTask) {
+        clearInterval(pollTimer);
+        disableRawMode();
+        write(showCursor());
+        write(clearScreen());
+
+        const name = await clack.text({
+          message: `Stack on ${selectedTask.id} — new task name`,
+          placeholder: "next-step",
+          validate: (val) => {
+            if (!val?.trim()) return "Name is required";
+            if (state.tasks[val.trim()]) return "Task already exists";
+            if (!/^[a-zA-Z0-9._-]+$/.test(val.trim())) return "Use alphanumeric, dash, dot, underscore";
+          },
+        });
+
+        if (!clack.isCancel(name) && name) {
+          const taskName = (name as string).trim();
+          const repoConfig = Object.entries(config.repos).find(([_, rc]) =>
+            repoNameFromUrl(rc.url) === selectedTask.repo
+          );
+
+          if (repoConfig) {
+            const s = clack.spinner();
+            s.start(`Creating stacked task ${taskName}...`);
+            try {
+              await createTask({
+                name: taskName,
+                repo: repoConfig[0],
+                repoConfig: repoConfig[1],
+                baseBranch: selectedTask.branch,
+                program: config.defaults.program,
+                branchPrefix: config.branchPrefix,
+                config,
+              }, state);
+              s.stop(`Task ${taskName} created (stacked on ${selectedTask.id})`);
+            } catch (e) {
+              s.stop(`Failed: ${e}`);
+              clack.log.error(String(e));
+              await new Promise((r) => setTimeout(r, 3000));
+            }
+          }
+          state = await loadState();
+        }
+
+        enableRawMode();
+        write(hideCursor());
+        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+        lastRender = "";
+        await poll();
+        continue;
+      }
+
+      if (key.key === "i") {
+        clearInterval(pollTimer);
+        disableRawMode();
+        write(showCursor());
+        write(clearScreen());
+
+        const repos = Object.entries(config.repos);
+        if (repos.length === 0) {
+          clack.log.error("No repos configured. Press c to add one.");
+          await new Promise((r) => setTimeout(r, 1500));
+        } else {
+          let repoKey: string;
+          if (repos.length === 1) {
+            repoKey = repos[0][0];
+          } else {
+            const selected = await clack.select({
+              message: "Repo",
+              options: repos.map(([key, rc]) => ({ value: key, label: `${key} (${rc.url})` })),
+              initialValue: state.lastRepo ?? repos[0][0],
+            });
+            if (clack.isCancel(selected)) {
+              enableRawMode();
+              write(hideCursor());
+              pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+              lastRender = "";
+              await poll();
+              continue;
+            }
+            repoKey = selected as string;
+          }
+
+          const branch = await clack.text({
+            message: "Branch name to import",
+            placeholder: "feature-xyz",
+            validate: (val) => {
+              if (!val?.trim()) return "Branch name is required";
+            },
+          });
+
+          if (!clack.isCancel(branch) && branch) {
+            const branchName = (branch as string).trim();
+            let taskName = branchName;
+            if (config.branchPrefix && taskName.startsWith(config.branchPrefix)) {
+              taskName = taskName.slice(config.branchPrefix.length);
+            }
+
+            const s = clack.spinner();
+            s.start(`Importing ${branchName}...`);
+            try {
+              await importTask({
+                name: taskName,
+                repo: repoKey,
+                repoConfig: config.repos[repoKey],
+                branch: branchName,
+                program: config.defaults.program,
+                config,
+              }, state);
+              s.stop(`Imported ${branchName} as ${taskName}`);
+            } catch (e) {
+              s.stop(`Failed: ${e}`);
+              clack.log.error(String(e));
+              await new Promise((r) => setTimeout(r, 3000));
+            }
+            state = await loadState();
+          }
+        }
 
         enableRawMode();
         write(hideCursor());
