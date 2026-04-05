@@ -34,10 +34,14 @@ export async function readKey(): Promise<KeyEvent> {
   // Escape sequences (arrows)
   if (bytes[0] === 27 && n >= 3 && bytes[1] === 91) {
     switch (bytes[2]) {
-      case 65: return { key: "up", ctrl: false, raw: bytes };
-      case 66: return { key: "down", ctrl: false, raw: bytes };
-      case 67: return { key: "right", ctrl: false, raw: bytes };
-      case 68: return { key: "left", ctrl: false, raw: bytes };
+      case 65:
+        return { key: "up", ctrl: false, raw: bytes };
+      case 66:
+        return { key: "down", ctrl: false, raw: bytes };
+      case 67:
+        return { key: "right", ctrl: false, raw: bytes };
+      case 68:
+        return { key: "left", ctrl: false, raw: bytes };
     }
   }
 

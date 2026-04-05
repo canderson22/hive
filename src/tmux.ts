@@ -20,7 +20,13 @@ export async function createSession(
   if (opts.hiveHome) env["HIVE_HOME"] = opts.hiveHome;
 
   await runOk([
-    "tmux", "new-session", "-d", "-s", name, "-c", cwd,
+    "tmux",
+    "new-session",
+    "-d",
+    "-s",
+    name,
+    "-c",
+    cwd,
   ], { env: Object.keys(env).length > 0 ? env : undefined });
 
   // Set session options
@@ -32,11 +38,19 @@ export async function createSession(
   if (opts.statusBar) {
     // Custom status bar: back button | task name | copy mode indicator
     await runOk([
-      "tmux", "set-option", "-t", name, "status-left",
+      "tmux",
+      "set-option",
+      "-t",
+      name,
+      "status-left",
       `#[bg=colour236,fg=colour248] [detach] #[default] ${name} `,
     ]);
     await runOk([
-      "tmux", "set-option", "-t", name, "status-right",
+      "tmux",
+      "set-option",
+      "-t",
+      name,
+      "status-right",
       "#{?pane_in_mode, COPY ,}",
     ]);
     await runOk(["tmux", "set-option", "-t", name, "status-style", "bg=colour235,fg=colour248"]);

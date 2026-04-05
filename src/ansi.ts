@@ -35,6 +35,7 @@ export function gray(s: string): string {
 }
 
 export function stripAnsi(s: string): string {
+  // deno-lint-ignore no-control-regex
   return s.replace(/\x1b\[[0-9;]*m/g, "");
 }
 

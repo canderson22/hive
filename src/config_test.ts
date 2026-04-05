@@ -1,6 +1,6 @@
 // src/config_test.ts
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { loadConfig, saveConfig, loadState, saveState, DEFAULT_CONFIG } from "./config.ts";
+import { assertEquals } from "@std/assert";
+import { DEFAULT_CONFIG, loadConfig, loadState, saveConfig, saveState } from "./config.ts";
 
 const TEST_DIR = await Deno.makeTempDir({ prefix: "hive-test-" });
 

@@ -1,25 +1,19 @@
 // src/tasks.ts — task lifecycle: create, restart, close
 
 import type { Config, RepoConfig, State, Task } from "./types.ts";
+import { hiveHome, readyWorktreePath, repoNameFromUrl, repoPath, worktreePath } from "./paths.ts";
 import {
-  hiveHome,
-  repoPath,
-  worktreePath,
-  readyWorktreePath,
-  repoNameFromUrl,
-} from "./paths.ts";
-import {
-  ensureBareClone,
-  createWorktree,
-  removeWorktree,
-  pushBranch,
-  hasReadyWorktree,
-  ensureReadyWorktree,
   consumeReadyWorktree,
+  createWorktree,
+  ensureBareClone,
+  ensureReadyWorktree,
   fetchBranches,
+  hasReadyWorktree,
+  pushBranch,
+  removeWorktree,
 } from "./git.ts";
-import { createSession, killSession, hasSession } from "./tmux.ts";
-import { installSignalScript, installHooksConfig } from "./hooks.ts";
+import { createSession, hasSession, killSession } from "./tmux.ts";
+import { installHooksConfig, installSignalScript } from "./hooks.ts";
 import { removeSignal } from "./monitor.ts";
 import { saveState } from "./config.ts";
 import { log } from "./log.ts";
@@ -118,7 +112,7 @@ export async function createTask(
 
 export async function restartTask(
   task: Task,
-  state: State,
+  _state: State,
   config: Config,
 ): Promise<void> {
   const home = hiveHome();

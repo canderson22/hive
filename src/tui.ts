@@ -1,11 +1,11 @@
 // src/tui.ts — dashboard rendering, key dispatch, dialog flows
 
 import * as clack from "@clack/prompts";
-import type { Config, State, Task, TaskStatus, Status } from "./types.ts";
+import type { Config, State, Status, Task, TaskStatus } from "./types.ts";
 import { pollAll } from "./monitor.ts";
 import { attachSession, hasSession } from "./tmux.ts";
-import { closeTask, createTask, openEditor, restartTask, type CreateTaskOpts } from "./tasks.ts";
-import { loadConfig, loadState, saveConfig, saveState } from "./config.ts";
+import { closeTask, createTask, openEditor, restartTask } from "./tasks.ts";
+import { loadConfig, loadState, saveConfig } from "./config.ts";
 import { disableRawMode, enableRawMode, readKey } from "./keypress.ts";
 import {
   bold,
@@ -84,7 +84,9 @@ export function renderDashboard(
   const visibleTasks = showAll ? tasks : fresh;
 
   lines.push("");
-  lines.push(bold("  hive") + dim(` — ${visibleTasks.length} task${visibleTasks.length === 1 ? "" : "s"}`));
+  lines.push(
+    bold("  hive") + dim(` — ${visibleTasks.length} task${visibleTasks.length === 1 ? "" : "s"}`),
+  );
   lines.push("");
 
   if (visibleTasks.length === 0) {
@@ -100,7 +102,9 @@ export function renderDashboard(
 
   if (!showAll && stale.length > 0) {
     lines.push("");
-    lines.push(dim(`  ${stale.length} stale task${stale.length === 1 ? "" : "s"} hidden (press a to show)`));
+    lines.push(
+      dim(`  ${stale.length} stale task${stale.length === 1 ? "" : "s"} hidden (press a to show)`),
+    );
   }
 
   lines.push("");
@@ -180,10 +184,16 @@ async function configDialog(config: Config): Promise<Config> {
   if (clack.isCancel(action) || action === "back") return config;
 
   if (action === "add-repo") {
-    const name = await clack.text({ message: "Repo name (e.g. my-project)", placeholder: "my-project" });
+    const name = await clack.text({
+      message: "Repo name (e.g. my-project)",
+      placeholder: "my-project",
+    });
     if (clack.isCancel(name)) return config;
 
-    const url = await clack.text({ message: "Git URL", placeholder: "https://github.com/org/repo.git" });
+    const url = await clack.text({
+      message: "Git URL",
+      placeholder: "https://github.com/org/repo.git",
+    });
     if (clack.isCancel(url)) return config;
 
     const defaultBranch = await clack.text({ message: "Default branch", initialValue: "main" });
@@ -242,7 +252,10 @@ async function configDialog(config: Config): Promise<Config> {
   }
 
   if (action === "set-program") {
-    const program = await clack.text({ message: "Default program", initialValue: config.defaults.program });
+    const program = await clack.text({
+      message: "Default program",
+      initialValue: config.defaults.program,
+    });
     if (!clack.isCancel(program)) {
       config.defaults.program = program as string;
       await saveConfig(config);

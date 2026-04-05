@@ -1,7 +1,7 @@
 // src/hooks_test.ts
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { installSignalScript, installHooksConfig } from "./hooks.ts";
+import { assert } from "@std/assert";
+import { join } from "@std/path";
+import { installHooksConfig, installSignalScript } from "./hooks.ts";
 
 Deno.test({
   name: "installSignalScript creates executable script",

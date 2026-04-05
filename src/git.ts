@@ -1,7 +1,7 @@
 // src/git.ts — bare clone, worktree, and fetch management
 
-import { ensureDir } from "https://deno.land/std@0.224.0/fs/mod.ts";
-import { dirname } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { ensureDir } from "@std/fs";
+import { dirname } from "@std/path";
 import { run, runOk } from "./run.ts";
 import { log } from "./log.ts";
 

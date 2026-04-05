@@ -1,15 +1,13 @@
 // src/background.ts — background fetch and ready worktree maintenance
 
 import type { Config } from "./types.ts";
-import { repoPath, readyWorktreePath, repoNameFromUrl } from "./paths.ts";
+import { readyWorktreePath, repoNameFromUrl, repoPath } from "./paths.ts";
 import { ensureBareClone, ensureReadyWorktree, refreshReadyWorktree } from "./git.ts";
 import { log } from "./log.ts";
 
 const FETCH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
 export function startBackgroundFetch(config: Config): { stop: () => void } {
-  let timer: number;
-
   const doFetch = async () => {
     for (const [_name, repoConfig] of Object.entries(config.repos)) {
       try {
@@ -33,7 +31,7 @@ export function startBackgroundFetch(config: Config): { stop: () => void } {
   doFetch().catch((e) => log.error("Initial background fetch failed", { error: String(e) }));
 
   // Then every 15 minutes
-  timer = setInterval(() => {
+  const timer = setInterval(() => {
     doFetch().catch((e) => log.error("Background fetch failed", { error: String(e) }));
   }, FETCH_INTERVAL_MS);
 

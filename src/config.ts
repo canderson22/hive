@@ -1,7 +1,7 @@
 // src/config.ts — config and state management
 
-import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { ensureDir } from "https://deno.land/std@0.224.0/fs/mod.ts";
+import { join } from "@std/path";
+import { ensureDir } from "@std/fs";
 import type { Config, State } from "./types.ts";
 
 export const DEFAULT_CONFIG: Config = {
@@ -29,7 +29,11 @@ export async function loadConfig(hiveHome?: string): Promise<Config> {
   try {
     const text = await Deno.readTextFile(path);
     const parsed = JSON.parse(text);
-    return { ...DEFAULT_CONFIG, ...parsed, defaults: { ...DEFAULT_CONFIG.defaults, ...parsed?.defaults } };
+    return {
+      ...DEFAULT_CONFIG,
+      ...parsed,
+      defaults: { ...DEFAULT_CONFIG.defaults, ...parsed?.defaults },
+    };
   } catch {
     return { ...DEFAULT_CONFIG };
   }

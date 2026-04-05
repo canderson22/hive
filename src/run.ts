@@ -7,7 +7,10 @@ export interface RunResult {
   stderr: string;
 }
 
-export async function run(cmd: string[], opts?: { cwd?: string; env?: Record<string, string>; stdin?: string }): Promise<RunResult> {
+export async function run(
+  cmd: string[],
+  opts?: { cwd?: string; env?: Record<string, string>; stdin?: string },
+): Promise<RunResult> {
   const command = new Deno.Command(cmd[0], {
     args: cmd.slice(1),
     cwd: opts?.cwd,
@@ -36,7 +39,10 @@ export async function run(cmd: string[], opts?: { cwd?: string; env?: Record<str
   };
 }
 
-export async function runOk(cmd: string[], opts?: { cwd?: string; env?: Record<string, string>; stdin?: string }): Promise<string> {
+export async function runOk(
+  cmd: string[],
+  opts?: { cwd?: string; env?: Record<string, string>; stdin?: string },
+): Promise<string> {
   const result = await run(cmd, opts);
   if (!result.success) {
     throw new Error(`Command failed: ${cmd.join(" ")}\n${result.stderr}`);

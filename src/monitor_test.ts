@@ -1,6 +1,6 @@
 // src/monitor_test.ts
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { parseSignal, classifyStatus, extractSnippet } from "./monitor.ts";
+import { assertEquals } from "@std/assert";
+import { classifyStatus, extractSnippet, parseSignal } from "./monitor.ts";
 
 // --- parseSignal ---
 
@@ -36,7 +36,9 @@ Deno.test("classifyStatus: prompt event → working", () => {
 });
 
 Deno.test("classifyStatus: stop with done metadata → done", () => {
-  const json = { last_assistant_message: "All done.\n<!-- hive: done | implemented auth middleware -->" };
+  const json = {
+    last_assistant_message: "All done.\n<!-- hive: done | implemented auth middleware -->",
+  };
   const result = classifyStatus("stop", json, true);
   assertEquals(result.status, "done");
 });

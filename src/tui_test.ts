@@ -1,6 +1,6 @@
 // src/tui_test.ts
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { renderTaskLine, renderDashboard, formatTitle } from "./tui.ts";
+import { assert, assertEquals } from "@std/assert";
+import { formatTitle, renderTaskLine } from "./tui.ts";
 import type { Task, TaskStatus } from "./types.ts";
 
 const TASK: Task = {

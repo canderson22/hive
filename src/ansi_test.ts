@@ -1,18 +1,6 @@
 // src/ansi_test.ts
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import {
-  bold,
-  dim,
-  green,
-  yellow,
-  red,
-  cyan,
-  magenta,
-  stripAnsi,
-  statusIcon,
-  statusColor,
-} from "./ansi.ts";
-import type { Status } from "./types.ts";
+import { assertEquals } from "@std/assert";
+import { bold, dim, green, statusColor, statusIcon, stripAnsi } from "./ansi.ts";
 
 Deno.test("bold wraps text with ANSI bold codes", () => {
   const result = bold("hello");

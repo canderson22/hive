@@ -1,8 +1,8 @@
 // src/log.ts — structured JSON-line logger to ~/.hive/hive.log
 
 import { logPath } from "./paths.ts";
-import { ensureDir } from "https://deno.land/std@0.224.0/fs/mod.ts";
-import { dirname } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { ensureDir } from "@std/fs";
+import { dirname } from "@std/path";
 
 let logFile: Deno.FsFile | null = null;
 

@@ -9,7 +9,10 @@
     "compile": "deno compile --allow-env --allow-read --allow-write --allow-run --allow-net --output=hive cli.ts"
   },
   "imports": {
-    "@clack/prompts": "npm:@clack/prompts@^0.11"
+    "@clack/prompts": "npm:@clack/prompts@^0.11",
+    "@std/assert": "https://deno.land/std@0.224.0/assert/mod.ts",
+    "@std/fs": "https://deno.land/std@0.224.0/fs/mod.ts",
+    "@std/path": "https://deno.land/std@0.224.0/path/mod.ts"
   },
   "fmt": {
     "lineWidth": 100,

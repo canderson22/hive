@@ -1,16 +1,15 @@
 // src/git_test.ts
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { assert, assertEquals } from "@std/assert";
+import { join } from "@std/path";
 import {
-  ensureBareClone,
+  consumeReadyWorktree,
   createWorktree,
-  removeWorktree,
-  resolveHead,
+  ensureBareClone,
+  ensureReadyWorktree,
   ensureRefspec,
   hasReadyWorktree,
-  ensureReadyWorktree,
-  consumeReadyWorktree,
-  refreshReadyWorktree,
+  removeWorktree,
+  resolveHead,
 } from "./git.ts";
 import { runOk } from "./run.ts";
 
@@ -74,7 +73,9 @@ Deno.test({
 
     await ensureRefspec(bareDir);
 
-    const refspec = await runOk(["git", "config", "--get", "remote.origin.fetch"], { cwd: bareDir });
+    const refspec = await runOk(["git", "config", "--get", "remote.origin.fetch"], {
+      cwd: bareDir,
+    });
     assertEquals(refspec, "+refs/heads/*:refs/remotes/origin/*");
   },
 });

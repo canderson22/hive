@@ -1,6 +1,6 @@
 // src/paths.ts — path constants for ~/.hive/ directory structure
 
-import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { join } from "@std/path";
 
 export function hiveHome(): string {
   return Deno.env.get("HIVE_HOME") ?? join(homeDir(), ".hive");

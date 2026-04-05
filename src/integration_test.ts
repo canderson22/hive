@@ -3,14 +3,14 @@
 // Requires: git, tmux
 // Creates a local git repo, registers it, creates a task, checks status, then cleans up.
 
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { loadConfig, saveConfig, loadState, saveState, DEFAULT_CONFIG } from "./config.ts";
-import { createTask, closeTask } from "./tasks.ts";
+import { assert, assertEquals } from "@std/assert";
+import { join } from "@std/path";
+import { DEFAULT_CONFIG, saveConfig } from "./config.ts";
+import { closeTask, createTask } from "./tasks.ts";
 import { hasSession } from "./tmux.ts";
 import { runOk } from "./run.ts";
 import { ensureBareClone } from "./git.ts";
-import { repoPath, repoNameFromUrl } from "./paths.ts";
+import { repoNameFromUrl, repoPath } from "./paths.ts";
 import type { Config, State } from "./types.ts";
 
 Deno.test({
@@ -33,8 +33,19 @@ Deno.test({
       const workDir = join(testDir, "work");
       await runOk(["git", "clone", remoteDir, workDir]);
       await Deno.writeTextFile(join(workDir, "README.md"), "# test");
-      await runOk(["git", "-c", "user.name=Test", "-c", "user.email=test@test.com", "add", "."], { cwd: workDir });
-      await runOk(["git", "-c", "user.name=Test", "-c", "user.email=test@test.com", "commit", "-m", "init"], { cwd: workDir });
+      await runOk(["git", "-c", "user.name=Test", "-c", "user.email=test@test.com", "add", "."], {
+        cwd: workDir,
+      });
+      await runOk([
+        "git",
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@test.com",
+        "commit",
+        "-m",
+        "init",
+      ], { cwd: workDir });
       await runOk(["git", "push"], { cwd: workDir });
 
       // Set up config

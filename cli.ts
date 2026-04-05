@@ -1,9 +1,8 @@
 // cli.ts — hive entry point
 
 import { runDashboard } from "./src/tui.ts";
-import { loadConfig } from "./src/config.ts";
 import { hiveHome } from "./src/paths.ts";
-import { ensureDir } from "https://deno.land/std@0.224.0/fs/mod.ts";
+import { ensureDir } from "@std/fs";
 import { log } from "./src/log.ts";
 
 const VERSION = "0.1.0";
