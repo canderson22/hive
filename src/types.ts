@@ -11,6 +11,13 @@ export interface Task {
   tmuxSession: string;
   program: string;
   createdAt: string;
+  repoDisplayName?: string;
+}
+
+export interface PrInfo {
+  number: number;
+  state: string;
+  url: string;
 }
 
 export interface RepoConfig {
@@ -38,6 +45,7 @@ export interface State {
   tasks: Record<string, Task>;
   lastRepo?: string;
   waitingSince?: Record<string, string>;
+  prCache?: Record<string, PrInfo>;
 }
 
 export interface TaskStatus {
