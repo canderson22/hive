@@ -638,6 +638,9 @@ export async function runDashboard(): Promise<void> {
 
           await attachSession(selectedTask.tmuxSession);
 
+          // Refresh PR status on return from tmux
+          bgFetch.refreshPrs().catch(() => {});
+
           enableRawMode();
           write(hideCursor());
           pollTimer = setInterval(poll, POLL_INTERVAL_MS);

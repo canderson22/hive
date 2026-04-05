@@ -7,13 +7,14 @@ import { refreshPrCache } from "./pr.ts";
 import { saveState } from "./config.ts";
 import { log } from "./log.ts";
 
-const FETCH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const GIT_FETCH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const PR_REFRESH_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 
 export function startBackgroundFetch(
   config: Config,
   state: State,
-): { stop: () => void } {
-  const doFetch = async () => {
+): { stop: () => void; refreshPrs: () => Promise<void> } {
+  const doGitFetch = async () => {
     for (const [_name, repoConfig] of Object.entries(config.repos)) {
       try {
         const repoName = repoNameFromUrl(repoConfig.url);
@@ -28,8 +29,9 @@ export function startBackgroundFetch(
         await log.warn("Background fetch failed", { repo: _name, error: String(e) });
       }
     }
+  };
 
-    // Refresh PR cache for all tasks
+  const doPrRefresh = async () => {
     try {
       const tasks = Object.values(state.tasks);
       if (tasks.length > 0) {
@@ -41,13 +43,25 @@ export function startBackgroundFetch(
     }
   };
 
-  doFetch().catch((e) => log.error("Initial background fetch failed", { error: String(e) }));
+  // Run both on startup
+  doGitFetch().catch((e) => log.error("Initial background fetch failed", { error: String(e) }));
+  doPrRefresh().catch((e) => log.error("Initial PR refresh failed", { error: String(e) }));
 
-  const timer = setInterval(() => {
-    doFetch().catch((e) => log.error("Background fetch failed", { error: String(e) }));
-  }, FETCH_INTERVAL_MS);
+  // Git fetch every 15 minutes
+  const gitTimer = setInterval(() => {
+    doGitFetch().catch((e) => log.error("Background fetch failed", { error: String(e) }));
+  }, GIT_FETCH_INTERVAL_MS);
+
+  // PR refresh every 2 minutes
+  const prTimer = setInterval(() => {
+    doPrRefresh().catch((e) => log.error("PR refresh failed", { error: String(e) }));
+  }, PR_REFRESH_INTERVAL_MS);
 
   return {
-    stop: () => clearInterval(timer),
+    stop: () => {
+      clearInterval(gitTimer);
+      clearInterval(prTimer);
+    },
+    refreshPrs: doPrRefresh,
   };
 }
