@@ -1,7 +1,17 @@
 // src/git_test.ts
 import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { ensureBareClone, createWorktree, removeWorktree, resolveHead, ensureRefspec } from "./git.ts";
+import {
+  ensureBareClone,
+  createWorktree,
+  removeWorktree,
+  resolveHead,
+  ensureRefspec,
+  hasReadyWorktree,
+  ensureReadyWorktree,
+  consumeReadyWorktree,
+  refreshReadyWorktree,
+} from "./git.ts";
 import { runOk } from "./run.ts";
 
 async function createTestRepo(dir: string): Promise<string> {
@@ -133,5 +143,78 @@ Deno.test({
     } catch (e) {
       assert(e instanceof Deno.errors.NotFound);
     }
+  },
+});
+
+Deno.test({
+  name: "ensureReadyWorktree provisions a _ready worktree",
+  sanitizeResources: false,
+  async fn() {
+    const dir = await Deno.makeTempDir({ prefix: "hive-git-test-" });
+    const originUrl = await createTestRepo(dir);
+    const bareDir = join(dir, "bare-clone.git");
+    await ensureBareClone(originUrl, bareDir);
+    await runOk(["git", "fetch", "origin"], { cwd: bareDir });
+
+    const readyPath = join(dir, "worktrees", "test-repo", "_ready");
+    assertEquals(await hasReadyWorktree(readyPath), false);
+
+    await ensureReadyWorktree(bareDir, readyPath, "main");
+    assertEquals(await hasReadyWorktree(readyPath), true);
+
+    // Verify it's a detached HEAD
+    const result = await runOk(["git", "rev-parse", "--abbrev-ref", "HEAD"], { cwd: readyPath });
+    assertEquals(result, "HEAD");
+  },
+});
+
+Deno.test({
+  name: "consumeReadyWorktree moves ready to branch worktree",
+  sanitizeResources: false,
+  async fn() {
+    const dir = await Deno.makeTempDir({ prefix: "hive-git-test-" });
+    const originUrl = await createTestRepo(dir);
+    const bareDir = join(dir, "bare-clone.git");
+    await ensureBareClone(originUrl, bareDir);
+    await runOk(["git", "fetch", "origin"], { cwd: bareDir });
+
+    const readyPath = join(dir, "worktrees", "test-repo", "_ready");
+    await ensureReadyWorktree(bareDir, readyPath, "main");
+
+    const targetPath = join(dir, "worktrees", "test-repo", "my-feature");
+    await consumeReadyWorktree(bareDir, readyPath, targetPath, "my-feature", "origin/main");
+
+    // Ready should be gone
+    assertEquals(await hasReadyWorktree(readyPath), false);
+
+    // Target should exist with correct branch
+    const branch = await runOk(["git", "rev-parse", "--abbrev-ref", "HEAD"], { cwd: targetPath });
+    assertEquals(branch, "my-feature");
+
+    // File should be present
+    const readme = await Deno.readTextFile(join(targetPath, "README.md"));
+    assertEquals(readme, "# test");
+  },
+});
+
+Deno.test({
+  name: "ensureReadyWorktree deduplicates concurrent calls",
+  sanitizeResources: false,
+  async fn() {
+    const dir = await Deno.makeTempDir({ prefix: "hive-git-test-" });
+    const originUrl = await createTestRepo(dir);
+    const bareDir = join(dir, "bare-clone.git");
+    await ensureBareClone(originUrl, bareDir);
+    await runOk(["git", "fetch", "origin"], { cwd: bareDir });
+
+    const readyPath = join(dir, "worktrees", "test-repo", "_ready");
+
+    // Fire two concurrent provisions — should not error
+    await Promise.all([
+      ensureReadyWorktree(bareDir, readyPath, "main"),
+      ensureReadyWorktree(bareDir, readyPath, "main"),
+    ]);
+
+    assertEquals(await hasReadyWorktree(readyPath), true);
   },
 });

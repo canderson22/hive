@@ -114,3 +114,78 @@ export async function exists(path: string): Promise<boolean> {
     return false;
   }
 }
+
+// In-flight provisioning promises for deduplication
+const provisioningLocks = new Map<string, Promise<void>>();
+
+export async function hasReadyWorktree(readyPath: string): Promise<boolean> {
+  return await exists(readyPath);
+}
+
+export async function ensureReadyWorktree(
+  bareDir: string,
+  readyPath: string,
+  defaultBranch: string,
+): Promise<void> {
+  // Already exists on disk
+  if (await hasReadyWorktree(readyPath)) return;
+
+  // Already being provisioned — await the in-flight promise
+  const existing = provisioningLocks.get(readyPath);
+  if (existing) {
+    await existing;
+    return;
+  }
+
+  const provision = (async () => {
+    try {
+      await ensureDir(dirname(readyPath));
+      await runOk(
+        ["git", "worktree", "add", "--detach", readyPath, `origin/${defaultBranch}`],
+        { cwd: bareDir },
+      );
+      await log.info("Provisioned ready worktree", { readyPath });
+    } finally {
+      provisioningLocks.delete(readyPath);
+    }
+  })();
+
+  provisioningLocks.set(readyPath, provision);
+  await provision;
+}
+
+export async function consumeReadyWorktree(
+  bareDir: string,
+  readyPath: string,
+  targetPath: string,
+  branch: string,
+  baseRef: string,
+): Promise<void> {
+  // Await any in-flight provisioning
+  const inflight = provisioningLocks.get(readyPath);
+  if (inflight) await inflight;
+
+  if (!(await hasReadyWorktree(readyPath))) {
+    throw new Error("No ready worktree to consume");
+  }
+
+  await ensureDir(dirname(targetPath));
+
+  // Move the worktree
+  await runOk(["git", "worktree", "move", readyPath, targetPath], { cwd: bareDir });
+
+  // Create branch and reset to base
+  await runOk(["git", "checkout", "-b", branch], { cwd: targetPath });
+  await runOk(["git", "reset", "--hard", baseRef], { cwd: targetPath });
+
+  await log.info("Consumed ready worktree", { branch, targetPath });
+}
+
+export async function refreshReadyWorktree(
+  readyPath: string,
+  defaultBranch: string,
+): Promise<void> {
+  if (!(await hasReadyWorktree(readyPath))) return;
+  await runOk(["git", "reset", "--hard", `origin/${defaultBranch}`], { cwd: readyPath });
+  await log.debug("Refreshed ready worktree", { readyPath });
+}
