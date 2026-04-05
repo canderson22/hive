@@ -365,7 +365,7 @@ function showHelp(): void {
 export async function runDashboard(): Promise<void> {
   let config = await loadConfig();
   let state = await loadState();
-  const bgFetch = startBackgroundFetch(config);
+  const bgFetch = startBackgroundFetch(config, state);
 
   let selectedIndex = 0;
   let showAll = false;
