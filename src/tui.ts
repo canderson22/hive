@@ -5,6 +5,7 @@ import type { Config, State, Status, Task, TaskStatus } from "./types.ts";
 import { pollAll } from "./monitor.ts";
 import { attachSession, hasSession } from "./tmux.ts";
 import { closeTask, createTask, openEditor, restartTask } from "./tasks.ts";
+import { scanDirectory } from "./git.ts";
 import { loadConfig, loadState, saveConfig } from "./config.ts";
 import { disableRawMode, enableRawMode, readKey } from "./keypress.ts";
 import {
@@ -174,6 +175,7 @@ async function configDialog(config: Config): Promise<Config> {
     message: "Config",
     options: [
       { value: "add-repo", label: "Add repo" },
+      { value: "scan-dir", label: "Scan directory for repos" },
       { value: "remove-repo", label: "Remove repo" },
       { value: "set-prefix", label: `Branch prefix (${config.branchPrefix || "none"})` },
       { value: "set-editor", label: `Editor (${config.editor})` },
@@ -213,6 +215,53 @@ async function configDialog(config: Config): Promise<Config> {
     };
     await saveConfig(config);
     clack.log.success(`Added repo ${name}`);
+  }
+
+  if (action === "scan-dir") {
+    const dir = await clack.text({
+      message: "Directory to scan",
+      placeholder: "~/coding",
+    });
+    if (clack.isCancel(dir)) return config;
+
+    // Expand ~ to home dir
+    let scanPath = (dir as string).trim();
+    if (scanPath.startsWith("~/")) {
+      scanPath = scanPath.replace("~", Deno.env.get("HOME") ?? "");
+    }
+
+    const s = clack.spinner();
+    s.start("Scanning...");
+
+    const repos = await scanDirectory(scanPath);
+    s.stop(`Found ${repos.length} repo${repos.length === 1 ? "" : "s"}`);
+
+    if (repos.length === 0) return config;
+
+    // Let user pick which repos to add
+    const choices = await clack.multiselect({
+      message: "Select repos to add",
+      options: repos
+        .filter((r) => !config.repos[r.name])
+        .map((r) => ({
+          value: r.name,
+          label: `${r.name} (${r.defaultBranch})`,
+          hint: r.url,
+        })),
+    });
+    if (clack.isCancel(choices)) return config;
+
+    for (const name of choices as string[]) {
+      const repo = repos.find((r) => r.name === name)!;
+      config.repos[name] = {
+        url: repo.url,
+        defaultBranch: repo.defaultBranch,
+        localPath: repo.path,
+      };
+    }
+
+    await saveConfig(config);
+    clack.log.success(`Added ${(choices as string[]).length} repo${(choices as string[]).length === 1 ? "" : "s"}`);
   }
 
   if (action === "remove-repo") {

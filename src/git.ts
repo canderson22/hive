@@ -189,3 +189,49 @@ export async function refreshReadyWorktree(
   await runOk(["git", "reset", "--hard", `origin/${defaultBranch}`], { cwd: readyPath });
   await log.debug("Refreshed ready worktree", { readyPath });
 }
+
+export interface ScannedRepo {
+  name: string;
+  path: string;
+  url: string;
+  defaultBranch: string;
+}
+
+export async function scanDirectory(dir: string): Promise<ScannedRepo[]> {
+  const repos: ScannedRepo[] = [];
+
+  for await (const entry of Deno.readDir(dir)) {
+    if (!entry.isDirectory) continue;
+    const entryPath = `${dir}/${entry.name}`;
+    const gitDir = `${entryPath}/.git`;
+
+    if (!(await exists(gitDir))) continue;
+
+    // Read remote URL
+    const urlResult = await run(
+      ["git", "config", "--get", "remote.origin.url"],
+      { cwd: entryPath },
+    );
+    if (!urlResult.success || !urlResult.stdout) continue;
+
+    // Detect default branch
+    const headResult = await run(
+      ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+      { cwd: entryPath },
+    );
+    let defaultBranch = "main";
+    if (headResult.success && headResult.stdout) {
+      // "refs/remotes/origin/main" -> "main"
+      defaultBranch = headResult.stdout.replace("refs/remotes/origin/", "");
+    }
+
+    repos.push({
+      name: entry.name,
+      path: entryPath,
+      url: urlResult.stdout,
+      defaultBranch,
+    });
+  }
+
+  return repos;
+}
