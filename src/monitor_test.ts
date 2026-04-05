@@ -108,7 +108,7 @@ Deno.test("extractSnippet: Grep tool with pattern", () => {
 });
 
 Deno.test("extractSnippet: prompt shows user text", () => {
-  const snippet = extractSnippet("prompt", { user_prompt: "fix the auth bug" });
+  const snippet = extractSnippet("prompt", { prompt: "fix the auth bug" });
   assertEquals(snippet, "fix the auth bug");
 });
 

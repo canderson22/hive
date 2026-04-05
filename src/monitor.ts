@@ -83,7 +83,7 @@ export function extractSnippet(
       snippet = toolName;
     }
   } else if (event === "prompt") {
-    snippet = (json.user_prompt as string) ?? "";
+    snippet = (json.prompt as string) ?? (json.user_prompt as string) ?? "";
   } else if (event === "stop") {
     const msg = (json.last_assistant_message as string) ?? "";
     // Strip hive metadata comment if present
