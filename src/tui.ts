@@ -6,6 +6,7 @@ import { pollAll } from "./monitor.ts";
 import { attachSession, hasSession } from "./tmux.ts";
 import { closeTask, createTask, openEditor, restartTask } from "./tasks.ts";
 import { scanDirectory } from "./git.ts";
+import { run } from "./run.ts";
 import { loadConfig, loadState, saveConfig } from "./config.ts";
 import { disableRawMode, enableRawMode, readKey } from "./keypress.ts";
 import {
@@ -531,7 +532,37 @@ export async function runDashboard(): Promise<void> {
       }
 
       if (key.key === "e" && selectedTask) {
-        await openEditor(selectedTask, config.editor);
+        clearInterval(pollTimer);
+        disableRawMode();
+        write(showCursor());
+
+        // Check if editor is configured and working
+        let editor = config.editor;
+        const editorCheck = await run(["which", editor]);
+        if (!editorCheck.success) {
+          const newEditor = await clack.text({
+            message: `Editor "${editor}" not found. Which editor to use?`,
+            placeholder: "cursor",
+          });
+          if (!clack.isCancel(newEditor) && newEditor) {
+            editor = (newEditor as string).trim();
+            config.editor = editor;
+            await saveConfig(config);
+          }
+        }
+
+        try {
+          await openEditor(selectedTask, editor);
+        } catch (e) {
+          clack.log.error(`Failed to open editor: ${e}`);
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+
+        enableRawMode();
+        write(hideCursor());
+        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+        lastRender = "";
+        await poll();
         continue;
       }
 
