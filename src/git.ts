@@ -175,7 +175,14 @@ export async function consumeReadyWorktree(
   await runOk(["git", "worktree", "move", readyPath, targetPath], { cwd: bareDir });
 
   // Create branch and reset to base
-  await runOk(["git", "checkout", "-b", branch], { cwd: targetPath });
+  const checkoutResult = await run(
+    ["git", "checkout", "-b", branch],
+    { cwd: targetPath },
+  );
+  if (!checkoutResult.success) {
+    // Branch already exists — check it out and reset
+    await runOk(["git", "checkout", branch], { cwd: targetPath });
+  }
   await runOk(["git", "reset", "--hard", baseRef], { cwd: targetPath });
 
   await log.info("Consumed ready worktree", { branch, targetPath });
