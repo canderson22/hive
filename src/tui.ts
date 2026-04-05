@@ -23,6 +23,7 @@ import {
   stripAnsi,
 } from "./ansi.ts";
 import { log } from "./log.ts";
+import { notify } from "./notifications.ts";
 import { startBackgroundFetch } from "./background.ts";
 
 const POLL_INTERVAL_MS = 1500;
@@ -224,6 +225,7 @@ async function configDialog(config: Config): Promise<Config> {
       { value: "set-prefix", label: `Branch prefix (${config.branchPrefix || "none"})` },
       { value: "set-editor", label: `Editor (${config.editor})` },
       { value: "set-program", label: `Default program (${config.defaults.program})` },
+      { value: "toggle-notifications", label: `Notifications (${config.notifications ? "on" : "off"})` },
       { value: "back", label: "Back" },
     ],
   });
@@ -360,6 +362,12 @@ async function configDialog(config: Config): Promise<Config> {
     }
   }
 
+  if (action === "toggle-notifications") {
+    config.notifications = !config.notifications;
+    await saveConfig(config);
+    clack.log.success(`Notifications ${config.notifications ? "enabled" : "disabled"}`);
+  }
+
   return config;
 }
 
@@ -492,6 +500,7 @@ export async function runDashboard(): Promise<void> {
   let showAll = false;
   let running = true;
   let lastRender = "";
+  let prevStatuses = new Map<string, string>(); // taskId -> previous status
 
   const taskList = () => {
     const tasks = Object.values(state.tasks);
@@ -549,6 +558,21 @@ export async function runDashboard(): Promise<void> {
         delete state.waitingSince?.[task.id];
       }
     }
+
+    // Fire notifications on status transitions
+    if (config.notifications) {
+      for (const task of tasks) {
+        const ts = statuses.get(task.id);
+        if (!ts) continue;
+        const prev = prevStatuses.get(task.id);
+        if (prev !== ts.status && (ts.status === "waiting" || ts.status === "blocked" || ts.status === "done")) {
+          notify(`hive — ${task.id}`, ts.snippet || ts.status).catch(() => {});
+        }
+      }
+    }
+    prevStatuses = new Map(
+      tasks.map((t) => [t.id, statuses.get(t.id)?.status ?? "stopped"]),
+    );
 
     if (tasks.length > 0) {
       selectedIndex = Math.max(0, Math.min(selectedIndex, tasks.length - 1));
