@@ -111,6 +111,32 @@ export async function createTask(
   return task;
 }
 
+async function findSessionId(worktreePath: string): Promise<string | null> {
+  // Claude stores sessions in .claude/projects/<project-hash>/
+  const claudeProjectsDir = `${worktreePath}/.claude/projects`;
+  try {
+    for await (const entry of Deno.readDir(claudeProjectsDir)) {
+      if (!entry.isDirectory) continue;
+      const projectDir = `${claudeProjectsDir}/${entry.name}`;
+      let latestTime = 0;
+      let latestId: string | null = null;
+      for await (const file of Deno.readDir(projectDir)) {
+        if (!file.name.endsWith(".jsonl")) continue;
+        const sessionId = file.name.replace(".jsonl", "");
+        const stat = await Deno.stat(`${projectDir}/${file.name}`);
+        if (stat.mtime && stat.mtime.getTime() > latestTime) {
+          latestTime = stat.mtime.getTime();
+          latestId = sessionId;
+        }
+      }
+      if (latestId) return latestId;
+    }
+  } catch {
+    // No session files found
+  }
+  return null;
+}
+
 export async function restartTask(
   task: Task,
   _state: State,
@@ -118,22 +144,32 @@ export async function restartTask(
 ): Promise<void> {
   const home = hiveHome();
 
-  // 1. Kill existing tmux session if alive
+  // 1. Find session ID before killing
+  const sessionId = await findSessionId(task.worktreePath);
+
+  // 2. Kill existing tmux session if alive
   if (await hasSession(task.tmuxSession)) {
     await killSession(task.tmuxSession);
   }
 
-  // 2. Remove old signal file
+  // 3. Remove old signal file
   await removeSignal(task.tmuxSession);
 
-  // 3. Create fresh tmux session in same worktree
-  await createSession(task.tmuxSession, task.worktreePath, task.program, {
+  // 4. Build program command — append --resume if we have a session
+  let program = task.program;
+  if (sessionId) {
+    program = `${task.program} --resume ${sessionId}`;
+    await log.info("Resuming session", { id: task.id, sessionId });
+  }
+
+  // 5. Create fresh tmux session
+  await createSession(task.tmuxSession, task.worktreePath, program, {
     mouse: config.tmuxMouse,
     statusBar: config.tmuxStatusBar,
     hiveHome: home,
   });
 
-  await log.info("Restarted task", { id: task.id });
+  await log.info("Restarted task", { id: task.id, resumed: !!sessionId });
 }
 
 export async function closeTask(
