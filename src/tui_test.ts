@@ -45,6 +45,12 @@ Deno.test("renderTaskLine shows PR info", () => {
   assert(line.includes("open"));
 });
 
+Deno.test("renderTaskLine shows dash when no PR", () => {
+  const status: TaskStatus = { status: "working", snippet: "" };
+  const line = renderTaskLine(TASK, status, false, false);
+  assert(line.includes("—"));
+});
+
 Deno.test("renderTaskLine shows indentation for stacked tasks", () => {
   const status: TaskStatus = { status: "working", snippet: "Edit src/auth.ts" };
   const line = renderTaskLine(TASK, status, false, false, undefined, 1);

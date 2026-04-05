@@ -47,13 +47,14 @@ export function renderTaskLine(
     : task.id;
   const name = selected ? bold(indent + displayName) : indent + displayName;
 
-  const pr = prInfo ? dim(` #${prInfo.number} ${prInfo.state}`) : "";
   const snippet = status.snippet ? dim(status.snippet) : "";
 
-  const nameWithPr = name + pr;
-  const paddedName = nameWithPr + " ".repeat(Math.max(0, 30 - stripAnsi(nameWithPr).length));
+  // Pad name to 24 chars, PR to 12 chars as separate columns
+  const paddedName = name + " ".repeat(Math.max(0, 24 - stripAnsi(name).length));
+  const prText = prInfo ? `#${prInfo.number} ${prInfo.state}` : "—";
+  const paddedPr = dim(prText) + " ".repeat(Math.max(0, 12 - prText.length));
 
-  return `${cursor} ${icon} ${paddedName} ${snippet}`;
+  return `${cursor} ${icon} ${paddedName} ${paddedPr} ${snippet}`;
 }
 
 export function formatTitle(statuses: Map<string, TaskStatus>): string {
@@ -114,7 +115,7 @@ export function renderDashboard(
     lines.push(dim("  No tasks. Press n to create one."));
     lines.push("");
   } else {
-    lines.push(dim("    ◦ Task                     Activity"));
+    lines.push(dim("    ◦ Task                     PR           Activity"));
     lines.push("");
   }
 
