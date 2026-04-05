@@ -220,9 +220,12 @@ async function configDialog(config: Config): Promise<Config> {
   if (action === "scan-dir") {
     const dir = await clack.text({
       message: "Directory to scan",
-      placeholder: "~/coding",
+      initialValue: "~/coding",
+      validate: (val) => {
+        if (!val || !val.trim()) return "Path is required";
+      },
     });
-    if (clack.isCancel(dir)) return config;
+    if (clack.isCancel(dir) || !dir) return config;
 
     // Expand ~ to home dir
     let scanPath = (dir as string).trim();
