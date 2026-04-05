@@ -167,6 +167,8 @@ async function newTaskDialog(config: Config, state: State): Promise<void> {
     s.stop(`Task ${taskName} created`);
   } catch (e) {
     s.stop(`Failed: ${e}`);
+    clack.log.error(String(e));
+    await new Promise((r) => setTimeout(r, 3000));
   }
 }
 
