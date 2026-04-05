@@ -61,6 +61,11 @@ export async function createPr(
     { cwd: task.worktreePath },
   ).catch(() => "");
 
+  // Check there are actually commits to PR
+  if (!commitLog.trim()) {
+    throw new Error("No commits to create a PR — the branch has no changes from " + task.baseBranch);
+  }
+
   // Ensure branch is pushed
   await run(["git", "push", "-u", "origin", task.branch], { cwd: task.worktreePath });
 
