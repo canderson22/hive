@@ -13,7 +13,7 @@ import {
   removeWorktree,
 } from "./git.ts";
 import { createSession, hasSession, killSession } from "./tmux.ts";
-import { installHooksConfig, installSignalScript } from "./hooks.ts";
+import { installHooksConfig, installRulesFile, installSignalScript } from "./hooks.ts";
 import { removeSignal } from "./monitor.ts";
 import { saveState } from "./config.ts";
 import { log } from "./log.ts";
@@ -69,6 +69,11 @@ export async function createTask(
   // 4. Install hooks
   await installSignalScript(home);
   await installHooksConfig(wtPath, `hive-${opts.name}`, home);
+
+  // 4b. Install rich status rules if enabled
+  if (opts.config.agentStatusReporting) {
+    await installRulesFile(wtPath);
+  }
 
   // 5. Create tmux session and launch Claude
   const tmuxSession = `hive-${opts.name}`;
@@ -243,6 +248,10 @@ export async function importTask(
   // 3. Install hooks
   await installSignalScript(home);
   await installHooksConfig(wtPath, `hive-${opts.name}`, home);
+
+  if (opts.config.agentStatusReporting) {
+    await installRulesFile(wtPath);
+  }
 
   // 4. Create tmux session
   const tmuxSession = `hive-${opts.name}`;

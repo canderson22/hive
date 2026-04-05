@@ -58,3 +58,31 @@ export async function installHooksConfig(
 
   await log.info("Installed hooks config", { worktreeDir, sessionName });
 }
+
+const RULES_CONTENT = `# Hive Status Reporting
+
+At the end of each response, append a status comment on a new line. This comment is invisible to the user but helps the monitoring dashboard show your current status.
+
+**Format:** \`<!-- hive: STATUS | brief description -->\`
+
+**Rules:**
+- If you have completed the task or finished what was asked: \`<!-- hive: done | what you accomplished -->\`
+- If you need user input, have a question, or are waiting for a decision: \`<!-- hive: waiting | your question or what you need -->\`
+- Always include this comment as the very last line of your response
+- Keep the description under 60 characters
+- This is required on every response, no exceptions
+
+**Examples:**
+- \`<!-- hive: done | implemented auth middleware and tests -->\`
+- \`<!-- hive: waiting | which database should I use? -->\`
+- \`<!-- hive: done | fixed the timezone bug in formatDate -->\`
+- \`<!-- hive: waiting | should this be a breaking change? -->\`
+`;
+
+export async function installRulesFile(worktreeDir: string): Promise<void> {
+  const rulesDir = join(worktreeDir, ".claude", "rules");
+  await ensureDir(rulesDir);
+  const rulesPath = join(rulesDir, "hive.local.md");
+  await Deno.writeTextFile(rulesPath, RULES_CONTENT);
+  await log.info("Installed rules file", { worktreeDir });
+}

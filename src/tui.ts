@@ -226,6 +226,7 @@ async function configDialog(config: Config): Promise<Config> {
       { value: "set-editor", label: `Editor (${config.editor})` },
       { value: "set-program", label: `Default program (${config.defaults.program})` },
       { value: "toggle-notifications", label: `Notifications (${config.notifications ? "on" : "off"})` },
+      { value: "toggle-status-reporting", label: `Agent status reporting (${config.agentStatusReporting ? "on" : "off"})` },
       { value: "back", label: "Back" },
     ],
   });
@@ -366,6 +367,12 @@ async function configDialog(config: Config): Promise<Config> {
     config.notifications = !config.notifications;
     await saveConfig(config);
     clack.log.success(`Notifications ${config.notifications ? "enabled" : "disabled"}`);
+  }
+
+  if (action === "toggle-status-reporting") {
+    config.agentStatusReporting = !config.agentStatusReporting;
+    await saveConfig(config);
+    clack.log.success(`Agent status reporting ${config.agentStatusReporting ? "enabled" : "disabled"} (applies to new tasks)`);
   }
 
   return config;
