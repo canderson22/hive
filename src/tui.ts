@@ -93,6 +93,9 @@ export function renderDashboard(
   if (visibleTasks.length === 0) {
     lines.push(dim("  No tasks. Press n to create one."));
     lines.push("");
+  } else {
+    lines.push(dim("    ◦ Task                     Activity"));
+    lines.push("");
   }
 
   for (let i = 0; i < visibleTasks.length; i++) {
