@@ -96,6 +96,7 @@ export async function createTask(
     tmuxSession,
     program: opts.program,
     createdAt: new Date().toISOString(),
+    repoDisplayName: opts.repo,
   };
 
   state.tasks[task.id] = task;
@@ -176,6 +177,64 @@ export async function closeTask(
   }
 
   await log.info("Closed task", { id: task.id });
+}
+
+export interface ImportTaskOpts {
+  name: string;
+  repo: string;
+  repoConfig: RepoConfig;
+  branch: string;
+  program: string;
+  config: Config;
+}
+
+export async function importTask(
+  opts: ImportTaskOpts,
+  state: State,
+): Promise<Task> {
+  const repoName = repoNameFromUrl(opts.repoConfig.url);
+  const home = hiveHome();
+
+  // 1. Ensure bare clone and fetch the branch
+  const bare = repoPath(repoName);
+  await ensureBareClone(opts.repoConfig.url, bare, opts.repoConfig.localPath);
+  await fetchBranches(bare, [opts.branch]);
+
+  // 2. Create worktree from existing branch
+  const wtPath = worktreePath(repoName, opts.branch);
+  await createWorktree(bare, wtPath, opts.branch, `origin/${opts.branch}`);
+
+  // 3. Install hooks
+  await installSignalScript(home);
+  await installHooksConfig(wtPath, `hive-${opts.name}`, home);
+
+  // 4. Create tmux session
+  const tmuxSession = `hive-${opts.name}`;
+  await createSession(tmuxSession, wtPath, opts.program, {
+    mouse: opts.config.tmuxMouse,
+    statusBar: opts.config.tmuxStatusBar,
+    hiveHome: home,
+  });
+
+  // 5. Save task
+  const task: Task = {
+    id: opts.name,
+    repo: repoName,
+    branch: opts.branch,
+    baseBranch: opts.repoConfig.defaultBranch,
+    worktreePath: wtPath,
+    tmuxSession,
+    program: opts.program,
+    createdAt: new Date().toISOString(),
+    repoDisplayName: opts.repo,
+  };
+
+  state.tasks[task.id] = task;
+  state.lastRepo = opts.repo;
+  await saveState(state);
+
+  await log.info("Imported task", { id: task.id, branch: opts.branch });
+  return task;
 }
 
 export async function openEditor(
