@@ -38,7 +38,10 @@ export async function installHooksConfig(
   await ensureDir(claudeDir);
 
   const hookEntry = (event: string) => [
-    { command: `${scriptPath} ${event} ${sessionName}` },
+    {
+      matcher: "",
+      hooks: [{ type: "command", command: `${scriptPath} ${event} ${sessionName}` }],
+    },
   ];
 
   const config = {

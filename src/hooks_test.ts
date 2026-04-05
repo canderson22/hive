@@ -42,8 +42,12 @@ Deno.test({
     assert(content.hooks.Stop);
     assert(content.hooks.Notification);
 
-    // Verify session name is in the command
-    const cmd = content.hooks.UserPromptSubmit[0].command;
+    // Verify new hook format with matcher + hooks array
+    const entry = content.hooks.UserPromptSubmit[0];
+    assert(entry.matcher === "", "Should have empty matcher");
+    assert(Array.isArray(entry.hooks), "Should have hooks array");
+    const cmd = entry.hooks[0].command;
+    assert(entry.hooks[0].type === "command", "Hook type should be command");
     assert(cmd.includes(sessionName), `Command should include session name: ${cmd}`);
     assert(cmd.includes("hive-signal"), `Command should reference hive-signal: ${cmd}`);
   },
