@@ -1,6 +1,6 @@
 // src/pr_test.ts
 import { assertEquals } from "@std/assert";
-import { generatePrTitle, generatePrBody } from "./pr.ts";
+import { generatePrBody, generatePrTitle } from "./pr.ts";
 
 Deno.test("generatePrTitle strips prefix and formats branch name", () => {
   assertEquals(generatePrTitle("charles-feature-auth", "charles-"), "Feature auth");

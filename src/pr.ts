@@ -22,7 +22,10 @@ export function generatePrBody(commitLog: string, diffStat: string): string {
   lines.push("");
   for (const line of commitLog.split("\n")) {
     const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith("commit ") && !trimmed.startsWith("Author:") && !trimmed.startsWith("Date:")) {
+    if (
+      trimmed && !trimmed.startsWith("commit ") && !trimmed.startsWith("Author:") &&
+      !trimmed.startsWith("Date:")
+    ) {
       lines.push(`- ${trimmed.replace(/^- /, "")}`);
     }
   }
@@ -65,7 +68,19 @@ export async function createPr(
   const body = generatePrBody(commitLog, diffStat);
 
   const result = await run(
-    ["gh", "pr", "create", "--title", title, "--body", body, "--base", task.baseBranch, "--head", task.branch],
+    [
+      "gh",
+      "pr",
+      "create",
+      "--title",
+      title,
+      "--body",
+      body,
+      "--base",
+      task.baseBranch,
+      "--head",
+      task.branch,
+    ],
     { cwd: task.worktreePath },
   );
 

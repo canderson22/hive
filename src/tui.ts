@@ -288,7 +288,9 @@ async function configDialog(config: Config): Promise<Config> {
     }
 
     await saveConfig(config);
-    clack.log.success(`Added ${(choices as string[]).length} repo${(choices as string[]).length === 1 ? "" : "s"}`);
+    clack.log.success(
+      `Added ${(choices as string[]).length} repo${(choices as string[]).length === 1 ? "" : "s"}`,
+    );
   }
 
   if (action === "remove-repo") {
@@ -605,7 +607,9 @@ export async function runDashboard(): Promise<void> {
           validate: (val) => {
             if (!val?.trim()) return "Name is required";
             if (state.tasks[val.trim()]) return "Task already exists";
-            if (!/^[a-zA-Z0-9._-]+$/.test(val.trim())) return "Use alphanumeric, dash, dot, underscore";
+            if (!/^[a-zA-Z0-9._-]+$/.test(val.trim())) {
+              return "Use alphanumeric, dash, dot, underscore";
+            }
           },
         });
 

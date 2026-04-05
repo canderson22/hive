@@ -1,6 +1,6 @@
 // src/tui_test.ts
 import { assert, assertEquals } from "@std/assert";
-import { renderTaskLine, formatTitle } from "./tui.ts";
+import { formatTitle, renderTaskLine } from "./tui.ts";
 import type { Task, TaskStatus } from "./types.ts";
 
 const TASK: Task = {
