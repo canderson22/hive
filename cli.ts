@@ -49,6 +49,17 @@ async function main(): Promise<void> {
     Deno.exit(1);
   }
 
+  // Check gh CLI is available (needed for PR features)
+  try {
+    const cmd = new Deno.Command("gh", { args: ["--version"], stdout: "piped", stderr: "piped" });
+    const output = await cmd.output();
+    if (!output.success) throw new Error("gh not available");
+  } catch {
+    console.error(
+      "Warning: gh CLI not found. PR features will not work. Install it with: brew install gh",
+    );
+  }
+
   await runDashboard();
 }
 

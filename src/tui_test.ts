@@ -45,6 +45,19 @@ Deno.test("renderTaskLine shows PR info", () => {
   assert(line.includes("open"));
 });
 
+Deno.test("renderTaskLine shows indentation for stacked tasks", () => {
+  const status: TaskStatus = { status: "working", snippet: "Edit src/auth.ts" };
+  const line = renderTaskLine(TASK, status, false, false, undefined, 1);
+  assert(line.includes("└"));
+  assert(line.includes("feature-auth"));
+});
+
+Deno.test("renderTaskLine shows no indent at depth 0", () => {
+  const status: TaskStatus = { status: "working", snippet: "" };
+  const line = renderTaskLine(TASK, status, false, false, undefined, 0);
+  assert(!line.includes("└"));
+});
+
 Deno.test("formatTitle summarizes statuses", () => {
   const statuses = new Map<string, TaskStatus>();
   statuses.set("a", { status: "working", snippet: "" });

@@ -9,7 +9,7 @@ import { createPr, openPrInBrowser } from "./pr.ts";
 import { repoNameFromUrl } from "./paths.ts";
 import { scanDirectory } from "./git.ts";
 import { run } from "./run.ts";
-import { loadConfig, loadState, saveConfig } from "./config.ts";
+import { DEFAULT_CONFIG, loadConfig, loadState, saveConfig } from "./config.ts";
 import { disableRawMode, enableRawMode, readKey } from "./keypress.ts";
 import {
   bold,
@@ -35,14 +35,17 @@ export function renderTaskLine(
   selected: boolean,
   multiRepo: boolean,
   prInfo?: PrInfo,
+  depth?: number,
 ): string {
   const cursor = selected ? ">" : " ";
   const icon = statusColor(status.status, statusIcon(status.status));
 
+  const indent = depth && depth > 0 ? "  ".repeat(depth) + "└ " : "";
+
   const displayName = multiRepo && task.repoDisplayName
     ? `${task.repoDisplayName}/${task.id}`
     : task.id;
-  const name = selected ? bold(displayName) : displayName;
+  const name = selected ? bold(indent + displayName) : indent + displayName;
 
   const pr = prInfo ? dim(` #${prInfo.number} ${prInfo.state}`) : "";
   const snippet = status.snippet ? dim(status.snippet) : "";
@@ -115,12 +118,28 @@ export function renderDashboard(
     lines.push("");
   }
 
+  // Compute depth for stacked task indentation
+  const taskByBranch = new Map<string, Task>();
+  for (const task of visibleTasks) {
+    taskByBranch.set(task.branch, task);
+  }
+  const getDepth = (task: Task): number => {
+    let depth = 0;
+    let current = task;
+    while (taskByBranch.has(current.baseBranch)) {
+      depth++;
+      current = taskByBranch.get(current.baseBranch)!;
+    }
+    return depth;
+  };
+
   for (let i = 0; i < visibleTasks.length; i++) {
     const task = visibleTasks[i];
     const status = statuses.get(task.id) ?? { status: "stopped" as Status, snippet: "" };
     const cacheKey = `${task.repo}:${task.branch}`;
     const prInfo = prCache[cacheKey];
-    lines.push(renderTaskLine(task, status, i === selectedIndex, multiRepo, prInfo));
+    const depth = getDepth(task);
+    lines.push(renderTaskLine(task, status, i === selectedIndex, multiRepo, prInfo, depth));
   }
 
   if (!showAll && stale.length > 0) {
@@ -362,10 +381,109 @@ function showHelp(): void {
   console.log(dim("\n  Press any key to return..."));
 }
 
+// --- First-Run Wizard ---
+
+async function firstRunWizard(): Promise<Config> {
+  console.log("");
+  clack.intro("Welcome to hive! Let's get you set up.");
+
+  const prefix = await clack.text({
+    message: "Branch prefix (your branches will be named prefix-taskname)",
+    placeholder: "charles-",
+  });
+  const branchPrefix = clack.isCancel(prefix) ? "" : (prefix as string).trim();
+
+  const editorChoice = await clack.text({
+    message: "Editor command",
+    initialValue: "cursor",
+  });
+  const editor = clack.isCancel(editorChoice) ? "cursor" : (editorChoice as string).trim();
+
+  const programChoice = await clack.text({
+    message: "Claude command (program launched in each task)",
+    initialValue: "claude",
+  });
+  const program = clack.isCancel(programChoice) ? "claude" : (programChoice as string).trim();
+
+  const config: Config = {
+    ...DEFAULT_CONFIG,
+    branchPrefix,
+    editor,
+    defaults: { program },
+  };
+
+  // Offer to scan for repos
+  const wantScan = await clack.confirm({
+    message: "Scan a directory for git repos to add?",
+  });
+
+  if (!clack.isCancel(wantScan) && wantScan) {
+    const dir = await clack.text({
+      message: "Directory to scan",
+      initialValue: "~/coding",
+      validate: (val) => {
+        if (!val || !val.trim()) return "Path is required";
+      },
+    });
+
+    if (!clack.isCancel(dir) && dir) {
+      let scanPath = (dir as string).trim();
+      if (scanPath.startsWith("~/")) {
+        scanPath = scanPath.replace("~", Deno.env.get("HOME") ?? "");
+      }
+
+      const s = clack.spinner();
+      s.start("Scanning...");
+      const repos = await scanDirectory(scanPath);
+      s.stop(`Found ${repos.length} repo${repos.length === 1 ? "" : "s"}`);
+
+      if (repos.length > 0) {
+        const choices = await clack.multiselect({
+          message: "Select repos to add",
+          options: repos.map((r) => ({
+            value: r.name,
+            label: `${r.name} (${r.defaultBranch})`,
+            hint: r.url,
+          })),
+        });
+
+        if (!clack.isCancel(choices)) {
+          for (const name of choices as string[]) {
+            const repo = repos.find((r) => r.name === name)!;
+            config.repos[name] = {
+              url: repo.url,
+              defaultBranch: repo.defaultBranch,
+              localPath: repo.path,
+            };
+          }
+        }
+      }
+    }
+  }
+
+  await saveConfig(config);
+  clack.outro("Setup complete! Launching dashboard...");
+  return config;
+}
+
 // --- Main Loop ---
 
 export async function runDashboard(): Promise<void> {
-  let config = await loadConfig();
+  // First-run wizard if no config exists
+  const { configPath } = await import("./paths.ts");
+  let isFirstRun = false;
+  try {
+    await Deno.stat(configPath());
+  } catch {
+    isFirstRun = true;
+  }
+
+  let config: Config;
+  if (isFirstRun) {
+    config = await firstRunWizard();
+  } else {
+    config = await loadConfig();
+  }
   let state = await loadState();
   const bgFetch = startBackgroundFetch(config, state);
 
@@ -376,8 +494,39 @@ export async function runDashboard(): Promise<void> {
 
   const taskList = () => {
     const tasks = Object.values(state.tasks);
-    tasks.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return tasks;
+    // Build tree: find root tasks (baseBranch is a default branch, not another task's branch)
+    const taskBranches = new Set(tasks.map((t) => t.branch));
+    const roots: Task[] = [];
+    const children = new Map<string, Task[]>(); // parent branch -> child tasks
+
+    for (const task of tasks) {
+      if (taskBranches.has(task.baseBranch)) {
+        // This task is stacked on another task
+        const list = children.get(task.baseBranch) ?? [];
+        list.push(task);
+        children.set(task.baseBranch, list);
+      } else {
+        roots.push(task);
+      }
+    }
+
+    // Sort roots by creation time (newest first)
+    roots.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    // Flatten tree: root, then children recursively
+    const result: Task[] = [];
+    const addWithChildren = (task: Task) => {
+      result.push(task);
+      const kids = children.get(task.branch) ?? [];
+      kids.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      for (const kid of kids) {
+        addWithChildren(kid);
+      }
+    };
+    for (const root of roots) {
+      addWithChildren(root);
+    }
+    return result;
   };
 
   const write = (s: string) => Deno.stdout.writeSync(new TextEncoder().encode(s));
@@ -437,277 +586,149 @@ export async function runDashboard(): Promise<void> {
         break;
       }
 
-      const tasks = taskList();
+      try {
+        const tasks = taskList();
 
-      if (key.key === "j" || key.key === "down") {
-        selectedIndex = Math.min(selectedIndex + 1, tasks.length - 1);
-        await poll();
-        continue;
-      }
+        if (key.key === "j" || key.key === "down") {
+          selectedIndex = Math.min(selectedIndex + 1, tasks.length - 1);
+          await poll();
+          continue;
+        }
 
-      if (key.key === "k" || key.key === "up") {
-        selectedIndex = Math.max(selectedIndex - 1, 0);
-        await poll();
-        continue;
-      }
+        if (key.key === "k" || key.key === "up") {
+          selectedIndex = Math.max(selectedIndex - 1, 0);
+          await poll();
+          continue;
+        }
 
-      if (key.key === "a") {
-        showAll = !showAll;
-        selectedIndex = 0;
-        await poll();
-        continue;
-      }
+        if (key.key === "a") {
+          showAll = !showAll;
+          selectedIndex = 0;
+          await poll();
+          continue;
+        }
 
-      if (key.key === "?") {
-        clearInterval(pollTimer);
-        disableRawMode();
-        showHelp();
-        enableRawMode();
-        await readKey();
-        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-        lastRender = "";
-        await poll();
-        continue;
-      }
+        if (key.key === "?") {
+          clearInterval(pollTimer);
+          disableRawMode();
+          showHelp();
+          enableRawMode();
+          await readKey();
+          pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+          lastRender = "";
+          await poll();
+          continue;
+        }
 
-      const selectedTask = tasks[selectedIndex];
+        const selectedTask = tasks[selectedIndex];
 
-      if (key.key === "enter" && selectedTask) {
-        clearInterval(pollTimer);
-        disableRawMode();
-        write(showCursor());
+        if (key.key === "enter" && selectedTask) {
+          clearInterval(pollTimer);
+          disableRawMode();
+          write(showCursor());
 
-        const alive = await hasSession(selectedTask.tmuxSession);
-        if (!alive) {
+          const alive = await hasSession(selectedTask.tmuxSession);
+          if (!alive) {
+            const s = clack.spinner();
+            s.start("Restarting...");
+            await restartTask(selectedTask, state, config);
+            s.stop("Restarted");
+          }
+
+          await attachSession(selectedTask.tmuxSession);
+
+          enableRawMode();
+          write(hideCursor());
+          pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+          lastRender = "";
+          await poll();
+          continue;
+        }
+
+        if (key.key === "n") {
+          clearInterval(pollTimer);
+          disableRawMode();
+          write(showCursor());
+          write(clearScreen());
+
+          await newTaskDialog(config, state);
+          state = await loadState();
+
+          enableRawMode();
+          write(hideCursor());
+          pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+          lastRender = "";
+          await poll();
+          continue;
+        }
+
+        if (key.key === "d" && selectedTask) {
+          clearInterval(pollTimer);
+          disableRawMode();
+          write(showCursor());
+
+          const confirm = await clack.confirm({
+            message: `Close task ${selectedTask.id}? This removes the worktree.`,
+          });
+
+          if (!clack.isCancel(confirm) && confirm) {
+            const s = clack.spinner();
+            s.start("Closing...");
+            await closeTask(selectedTask, state, config);
+            s.stop(`Closed ${selectedTask.id}`);
+            state = await loadState();
+          }
+
+          enableRawMode();
+          write(hideCursor());
+          pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+          lastRender = "";
+          await poll();
+          continue;
+        }
+
+        if (key.key === "r" && selectedTask) {
+          clearInterval(pollTimer);
+          disableRawMode();
+          write(showCursor());
+
           const s = clack.spinner();
           s.start("Restarting...");
           await restartTask(selectedTask, state, config);
           s.stop("Restarted");
+
+          enableRawMode();
+          write(hideCursor());
+          pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+          lastRender = "";
+          await poll();
+          continue;
         }
 
-        await attachSession(selectedTask.tmuxSession);
+        if (key.key === "p" && selectedTask) {
+          clearInterval(pollTimer);
+          disableRawMode();
+          write(showCursor());
 
-        enableRawMode();
-        write(hideCursor());
-        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-        lastRender = "";
-        await poll();
-        continue;
-      }
+          const cacheKey = `${selectedTask.repo}:${selectedTask.branch}`;
+          const existing = state.prCache?.[cacheKey];
 
-      if (key.key === "n") {
-        clearInterval(pollTimer);
-        disableRawMode();
-        write(showCursor());
-        write(clearScreen());
-
-        await newTaskDialog(config, state);
-        state = await loadState();
-
-        enableRawMode();
-        write(hideCursor());
-        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-        lastRender = "";
-        await poll();
-        continue;
-      }
-
-      if (key.key === "d" && selectedTask) {
-        clearInterval(pollTimer);
-        disableRawMode();
-        write(showCursor());
-
-        const confirm = await clack.confirm({
-          message: `Close task ${selectedTask.id}? This removes the worktree.`,
-        });
-
-        if (!clack.isCancel(confirm) && confirm) {
-          const s = clack.spinner();
-          s.start("Closing...");
-          await closeTask(selectedTask, state, config);
-          s.stop(`Closed ${selectedTask.id}`);
-          state = await loadState();
-        }
-
-        enableRawMode();
-        write(hideCursor());
-        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-        lastRender = "";
-        await poll();
-        continue;
-      }
-
-      if (key.key === "r" && selectedTask) {
-        clearInterval(pollTimer);
-        disableRawMode();
-        write(showCursor());
-
-        const s = clack.spinner();
-        s.start("Restarting...");
-        await restartTask(selectedTask, state, config);
-        s.stop("Restarted");
-
-        enableRawMode();
-        write(hideCursor());
-        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-        lastRender = "";
-        await poll();
-        continue;
-      }
-
-      if (key.key === "p" && selectedTask) {
-        clearInterval(pollTimer);
-        disableRawMode();
-        write(showCursor());
-
-        const cacheKey = `${selectedTask.repo}:${selectedTask.branch}`;
-        const existing = state.prCache?.[cacheKey];
-
-        if (existing) {
-          clack.log.info(`PR #${existing.number} (${existing.state}) — opening in browser...`);
-          await openPrInBrowser(selectedTask);
-          await new Promise((r) => setTimeout(r, 1000));
-        } else {
-          const s = clack.spinner();
-          s.start("Creating PR...");
-          try {
-            const pr = await createPr(selectedTask, config.branchPrefix, state);
-            if (pr) {
-              s.stop(`Created PR #${pr.number}`);
-              clack.log.success(pr.url);
-              await new Promise((r) => setTimeout(r, 2000));
-            } else {
-              s.stop("PR created (could not fetch details)");
-            }
-          } catch (e) {
-            s.stop(`Failed: ${e}`);
-            clack.log.error(String(e));
-            await new Promise((r) => setTimeout(r, 3000));
-          }
-          state = await loadState();
-        }
-
-        enableRawMode();
-        write(hideCursor());
-        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-        lastRender = "";
-        await poll();
-        continue;
-      }
-
-      if (key.key === "s" && selectedTask) {
-        clearInterval(pollTimer);
-        disableRawMode();
-        write(showCursor());
-        write(clearScreen());
-
-        const name = await clack.text({
-          message: `Stack on ${selectedTask.id} — new task name`,
-          placeholder: "next-step",
-          validate: (val) => {
-            if (!val?.trim()) return "Name is required";
-            if (state.tasks[val.trim()]) return "Task already exists";
-            if (!/^[a-zA-Z0-9._-]+$/.test(val.trim())) {
-              return "Use alphanumeric, dash, dot, underscore";
-            }
-          },
-        });
-
-        if (!clack.isCancel(name) && name) {
-          const taskName = (name as string).trim();
-          const repoConfig = Object.entries(config.repos).find(([_, rc]) =>
-            repoNameFromUrl(rc.url) === selectedTask.repo
-          );
-
-          if (repoConfig) {
-            const s = clack.spinner();
-            s.start(`Creating stacked task ${taskName}...`);
-            try {
-              await createTask({
-                name: taskName,
-                repo: repoConfig[0],
-                repoConfig: repoConfig[1],
-                baseBranch: selectedTask.branch,
-                program: config.defaults.program,
-                branchPrefix: config.branchPrefix,
-                config,
-              }, state);
-              s.stop(`Task ${taskName} created (stacked on ${selectedTask.id})`);
-            } catch (e) {
-              s.stop(`Failed: ${e}`);
-              clack.log.error(String(e));
-              await new Promise((r) => setTimeout(r, 3000));
-            }
-          }
-          state = await loadState();
-        }
-
-        enableRawMode();
-        write(hideCursor());
-        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-        lastRender = "";
-        await poll();
-        continue;
-      }
-
-      if (key.key === "i") {
-        clearInterval(pollTimer);
-        disableRawMode();
-        write(showCursor());
-        write(clearScreen());
-
-        const repos = Object.entries(config.repos);
-        if (repos.length === 0) {
-          clack.log.error("No repos configured. Press c to add one.");
-          await new Promise((r) => setTimeout(r, 1500));
-        } else {
-          let repoKey: string;
-          if (repos.length === 1) {
-            repoKey = repos[0][0];
+          if (existing) {
+            clack.log.info(`PR #${existing.number} (${existing.state}) — opening in browser...`);
+            await openPrInBrowser(selectedTask);
+            await new Promise((r) => setTimeout(r, 1000));
           } else {
-            const selected = await clack.select({
-              message: "Repo",
-              options: repos.map(([key, rc]) => ({ value: key, label: `${key} (${rc.url})` })),
-              initialValue: state.lastRepo ?? repos[0][0],
-            });
-            if (clack.isCancel(selected)) {
-              enableRawMode();
-              write(hideCursor());
-              pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-              lastRender = "";
-              await poll();
-              continue;
-            }
-            repoKey = selected as string;
-          }
-
-          const branch = await clack.text({
-            message: "Branch name to import",
-            placeholder: "feature-xyz",
-            validate: (val) => {
-              if (!val?.trim()) return "Branch name is required";
-            },
-          });
-
-          if (!clack.isCancel(branch) && branch) {
-            const branchName = (branch as string).trim();
-            let taskName = branchName;
-            if (config.branchPrefix && taskName.startsWith(config.branchPrefix)) {
-              taskName = taskName.slice(config.branchPrefix.length);
-            }
-
             const s = clack.spinner();
-            s.start(`Importing ${branchName}...`);
+            s.start("Creating PR...");
             try {
-              await importTask({
-                name: taskName,
-                repo: repoKey,
-                repoConfig: config.repos[repoKey],
-                branch: branchName,
-                program: config.defaults.program,
-                config,
-              }, state);
-              s.stop(`Imported ${branchName} as ${taskName}`);
+              const pr = await createPr(selectedTask, config.branchPrefix, state);
+              if (pr) {
+                s.stop(`Created PR #${pr.number}`);
+                clack.log.success(pr.url);
+                await new Promise((r) => setTimeout(r, 2000));
+              } else {
+                s.stop("PR created (could not fetch details)");
+              }
             } catch (e) {
               s.stop(`Failed: ${e}`);
               clack.log.error(String(e));
@@ -715,65 +736,207 @@ export async function runDashboard(): Promise<void> {
             }
             state = await loadState();
           }
+
+          enableRawMode();
+          write(hideCursor());
+          pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+          lastRender = "";
+          await poll();
+          continue;
         }
 
-        enableRawMode();
-        write(hideCursor());
-        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-        lastRender = "";
-        await poll();
-        continue;
-      }
+        if (key.key === "s" && selectedTask) {
+          clearInterval(pollTimer);
+          disableRawMode();
+          write(showCursor());
+          write(clearScreen());
 
-      if (key.key === "e" && selectedTask) {
-        clearInterval(pollTimer);
-        disableRawMode();
-        write(showCursor());
-
-        // Check if editor is configured and working
-        let editor = config.editor;
-        const editorCheck = await run(["which", editor]);
-        if (!editorCheck.success) {
-          const newEditor = await clack.text({
-            message: `Editor "${editor}" not found. Which editor to use?`,
-            placeholder: "cursor",
+          const name = await clack.text({
+            message: `Stack on ${selectedTask.id} — new task name`,
+            placeholder: "next-step",
+            validate: (val) => {
+              if (!val?.trim()) return "Name is required";
+              if (state.tasks[val.trim()]) return "Task already exists";
+              if (!/^[a-zA-Z0-9._-]+$/.test(val.trim())) {
+                return "Use alphanumeric, dash, dot, underscore";
+              }
+            },
           });
-          if (!clack.isCancel(newEditor) && newEditor) {
-            editor = (newEditor as string).trim();
-            config.editor = editor;
-            await saveConfig(config);
+
+          if (!clack.isCancel(name) && name) {
+            const taskName = (name as string).trim();
+            const repoConfig = Object.entries(config.repos).find(([_, rc]) =>
+              repoNameFromUrl(rc.url) === selectedTask.repo
+            );
+
+            if (repoConfig) {
+              const s = clack.spinner();
+              s.start(`Creating stacked task ${taskName}...`);
+              try {
+                await createTask({
+                  name: taskName,
+                  repo: repoConfig[0],
+                  repoConfig: repoConfig[1],
+                  baseBranch: selectedTask.branch,
+                  program: config.defaults.program,
+                  branchPrefix: config.branchPrefix,
+                  config,
+                }, state);
+                s.stop(`Task ${taskName} created (stacked on ${selectedTask.id})`);
+              } catch (e) {
+                s.stop(`Failed: ${e}`);
+                clack.log.error(String(e));
+                await new Promise((r) => setTimeout(r, 3000));
+              }
+            }
+            state = await loadState();
           }
+
+          enableRawMode();
+          write(hideCursor());
+          pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+          lastRender = "";
+          await poll();
+          continue;
         }
 
-        try {
-          await openEditor(selectedTask, editor);
-        } catch (e) {
-          clack.log.error(`Failed to open editor: ${e}`);
-          await new Promise((r) => setTimeout(r, 2000));
+        if (key.key === "i") {
+          clearInterval(pollTimer);
+          disableRawMode();
+          write(showCursor());
+          write(clearScreen());
+
+          const repos = Object.entries(config.repos);
+          if (repos.length === 0) {
+            clack.log.error("No repos configured. Press c to add one.");
+            await new Promise((r) => setTimeout(r, 1500));
+          } else {
+            let repoKey: string;
+            if (repos.length === 1) {
+              repoKey = repos[0][0];
+            } else {
+              const selected = await clack.select({
+                message: "Repo",
+                options: repos.map(([key, rc]) => ({ value: key, label: `${key} (${rc.url})` })),
+                initialValue: state.lastRepo ?? repos[0][0],
+              });
+              if (clack.isCancel(selected)) {
+                enableRawMode();
+                write(hideCursor());
+                pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+                lastRender = "";
+                await poll();
+                continue;
+              }
+              repoKey = selected as string;
+            }
+
+            const branch = await clack.text({
+              message: "Branch name to import",
+              placeholder: "feature-xyz",
+              validate: (val) => {
+                if (!val?.trim()) return "Branch name is required";
+              },
+            });
+
+            if (!clack.isCancel(branch) && branch) {
+              const branchName = (branch as string).trim();
+              let taskName = branchName;
+              if (config.branchPrefix && taskName.startsWith(config.branchPrefix)) {
+                taskName = taskName.slice(config.branchPrefix.length);
+              }
+
+              const s = clack.spinner();
+              s.start(`Importing ${branchName}...`);
+              try {
+                await importTask({
+                  name: taskName,
+                  repo: repoKey,
+                  repoConfig: config.repos[repoKey],
+                  branch: branchName,
+                  program: config.defaults.program,
+                  config,
+                }, state);
+                s.stop(`Imported ${branchName} as ${taskName}`);
+              } catch (e) {
+                s.stop(`Failed: ${e}`);
+                clack.log.error(String(e));
+                await new Promise((r) => setTimeout(r, 3000));
+              }
+              state = await loadState();
+            }
+          }
+
+          enableRawMode();
+          write(hideCursor());
+          pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+          lastRender = "";
+          await poll();
+          continue;
         }
 
-        enableRawMode();
-        write(hideCursor());
-        pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-        lastRender = "";
-        await poll();
-        continue;
-      }
+        if (key.key === "e" && selectedTask) {
+          clearInterval(pollTimer);
+          disableRawMode();
+          write(showCursor());
 
-      if (key.key === "c") {
+          // Check if editor is configured and working
+          let editor = config.editor;
+          const editorCheck = await run(["which", editor]);
+          if (!editorCheck.success) {
+            const newEditor = await clack.text({
+              message: `Editor "${editor}" not found. Which editor to use?`,
+              placeholder: "cursor",
+            });
+            if (!clack.isCancel(newEditor) && newEditor) {
+              editor = (newEditor as string).trim();
+              config.editor = editor;
+              await saveConfig(config);
+            }
+          }
+
+          try {
+            await openEditor(selectedTask, editor);
+          } catch (e) {
+            clack.log.error(`Failed to open editor: ${e}`);
+            await new Promise((r) => setTimeout(r, 2000));
+          }
+
+          enableRawMode();
+          write(hideCursor());
+          pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+          lastRender = "";
+          await poll();
+          continue;
+        }
+
+        if (key.key === "c") {
+          clearInterval(pollTimer);
+          disableRawMode();
+          write(showCursor());
+          write(clearScreen());
+
+          config = await configDialog(config);
+
+          enableRawMode();
+          write(hideCursor());
+          pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+          lastRender = "";
+          await poll();
+          continue;
+        }
+      } catch (e) {
+        // Recover dashboard state
         clearInterval(pollTimer);
         disableRawMode();
         write(showCursor());
-        write(clearScreen());
-
-        config = await configDialog(config);
-
+        clack.log.error(`Error: ${e}`);
+        await new Promise((r) => setTimeout(r, 2000));
         enableRawMode();
         write(hideCursor());
         pollTimer = setInterval(poll, POLL_INTERVAL_MS);
         lastRender = "";
         await poll();
-        continue;
       }
     }
   } finally {
