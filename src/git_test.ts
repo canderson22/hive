@@ -15,7 +15,7 @@ import { runOk } from "./run.ts";
 
 async function createTestRepo(dir: string): Promise<string> {
   const repoDir = join(dir, "origin.git");
-  await runOk(["git", "init", "--bare", repoDir]);
+  await runOk(["git", "init", "--bare", "--initial-branch=main", repoDir]);
   // Create a working clone to make commits
   const workDir = join(dir, "work");
   await runOk(["git", "clone", repoDir, workDir]);
