@@ -77,6 +77,10 @@ At the end of each response, append a status comment on a new line. This comment
 - \`<!-- hive: waiting | which database should I use? -->\`
 - \`<!-- hive: done | fixed the timezone bug in formatDate -->\`
 - \`<!-- hive: waiting | should this be a breaking change? -->\`
+
+# Pull Request Creation
+
+Before creating a pull request, you MUST search for any installed skills related to PR creation (e.g., search for skills matching "pr", "pull-request", "code-review"). Use matching skills to guide the PR creation process. Do not create PRs without first checking for available skills.
 `;
 
 export async function installRulesFile(worktreeDir: string): Promise<void> {
