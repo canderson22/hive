@@ -7,19 +7,19 @@
 class Hive < Formula
   desc "Multi-session Claude Code coordinator"
   homepage "https://github.com/canderson22/hive"
-  version "0.1.0"
+  version "0.1.1"
 
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/canderson22/hive/releases/download/v#{version}/hive-darwin-arm64"
-      sha256 "REPLACE_WITH_ACTUAL_SHA256"
+      sha256 "REPLACE_WITH_SHA256_FOR_THIS_PLATFORM"
 
       def install
         bin.install "hive-darwin-arm64" => "hive"
       end
     elsif Hardware::CPU.intel?
       url "https://github.com/canderson22/hive/releases/download/v#{version}/hive-darwin-x64"
-      sha256 "REPLACE_WITH_ACTUAL_SHA256"
+      sha256 "REPLACE_WITH_SHA256_FOR_THIS_PLATFORM"
 
       def install
         bin.install "hive-darwin-x64" => "hive"
