@@ -4,6 +4,90 @@ import type { PrInfo, State, Task } from "./types.ts";
 import { run, runOk } from "./run.ts";
 import { saveState } from "./config.ts";
 import { log } from "./log.ts";
+import { join } from "@std/path";
+
+export interface PrGuidelines {
+  template?: string;
+  guidelines?: string;
+}
+
+async function readFileIfExists(path: string): Promise<string | null> {
+  try {
+    return await Deno.readTextFile(path);
+  } catch {
+    return null;
+  }
+}
+
+export async function detectPrGuidelines(worktreePath: string): Promise<PrGuidelines> {
+  const result: PrGuidelines = {};
+
+  // 1. Check for PR template
+  const templatePaths = [
+    join(worktreePath, ".github", "pull_request_template.md"),
+    join(worktreePath, ".github", "PULL_REQUEST_TEMPLATE.md"),
+  ];
+
+  for (const p of templatePaths) {
+    const content = await readFileIfExists(p);
+    if (content) {
+      result.template = content;
+      break;
+    }
+  }
+
+  // Also check PULL_REQUEST_TEMPLATE directory
+  if (!result.template) {
+    const templateDir = join(worktreePath, ".github", "PULL_REQUEST_TEMPLATE");
+    try {
+      const entries: string[] = [];
+      for await (const entry of Deno.readDir(templateDir)) {
+        if (entry.isFile && entry.name.endsWith(".md")) {
+          const content = await Deno.readTextFile(join(templateDir, entry.name));
+          entries.push(content);
+        }
+      }
+      if (entries.length > 0) {
+        result.template = entries.join("\n\n---\n\n");
+      }
+    } catch {
+      // Directory doesn't exist — skip
+    }
+  }
+
+  // 2. Collect guidelines from various sources
+  const guidelineParts: string[] = [];
+
+  const contributingContent = await readFileIfExists(join(worktreePath, "CONTRIBUTING.md"));
+  if (contributingContent) guidelineParts.push(contributingContent);
+
+  const claudeContent = await readFileIfExists(join(worktreePath, "CLAUDE.md"));
+  if (claudeContent) guidelineParts.push(claudeContent);
+
+  const agentsContent = await readFileIfExists(join(worktreePath, "AGENTS.md"));
+  if (agentsContent) guidelineParts.push(agentsContent);
+
+  // 3. Check .claude/rules/ for PR-related rules
+  const rulesDir = join(worktreePath, ".claude", "rules");
+  try {
+    for await (const entry of Deno.readDir(rulesDir)) {
+      if (entry.isFile && entry.name.endsWith(".md")) {
+        const content = await Deno.readTextFile(join(rulesDir, entry.name));
+        if (/\bPR\b|pull request/i.test(content)) {
+          guidelineParts.push(content);
+        }
+      }
+    }
+  } catch {
+    // Directory doesn't exist — skip
+  }
+
+  if (guidelineParts.length > 0) {
+    result.guidelines = guidelineParts.join("\n\n");
+  }
+
+  return result;
+}
 
 export function generatePrTitle(branch: string, branchPrefix: string): string {
   let name = branch;
