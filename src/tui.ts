@@ -751,11 +751,29 @@ export async function runDashboard(): Promise<void> {
           disableRawMode();
           write(showCursor());
 
-          const confirm = await clack.confirm({
-            message: `Close task ${selectedTask.id}? This removes the worktree.`,
-          });
+          let shouldClose = config.skipCloseConfirm;
 
-          if (!clack.isCancel(confirm) && confirm) {
+          if (!shouldClose) {
+            const confirm = await clack.select({
+              message:
+                `Close task ${selectedTask.id}? This will kill the session, remove the worktree, and delete the branch (local + remote).`,
+              options: [
+                { value: "yes", label: "Yes, close it" },
+                { value: "always", label: "Yes, and don't ask again" },
+                { value: "no", label: "No, keep it" },
+              ],
+            });
+
+            if (confirm === "always") {
+              shouldClose = true;
+              config.skipCloseConfirm = true;
+              await saveConfig(config);
+            } else if (confirm === "yes") {
+              shouldClose = true;
+            }
+          }
+
+          if (shouldClose) {
             const s = clack.spinner();
             s.start("Closing...");
             await closeTask(selectedTask, state, config);

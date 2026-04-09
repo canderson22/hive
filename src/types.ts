@@ -38,6 +38,7 @@ export interface Config {
   notifications: boolean;
   tmuxMouse: boolean;
   tmuxStatusBar: boolean;
+  skipCloseConfirm: boolean;
   defaults: {
     program: string;
   };

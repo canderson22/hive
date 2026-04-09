@@ -98,6 +98,13 @@ export async function fetchBranches(bareDir: string, branches: string[]): Promis
   });
 }
 
+export async function deleteBranch(bareDir: string, branch: string): Promise<void> {
+  // Delete local branch ref
+  await run(["git", "branch", "-D", branch], { cwd: bareDir }).catch(() => {});
+  // Delete remote branch
+  await run(["git", "push", "origin", "--delete", branch], { cwd: bareDir }).catch(() => {});
+}
+
 export async function resolveHead(wtPath: string): Promise<string> {
   return await runOk(["git", "rev-parse", "HEAD"], { cwd: wtPath });
 }

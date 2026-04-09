@@ -5,6 +5,7 @@ import { hiveHome, readyWorktreePath, repoNameFromUrl, repoPath, worktreePath } 
 import {
   consumeReadyWorktree,
   createWorktree,
+  deleteBranch,
   ensureBareClone,
   ensureReadyWorktree,
   fetchBranches,
@@ -194,6 +195,13 @@ export async function closeTask(
     await removeWorktree(bare, task.worktreePath);
   } catch (e) {
     await log.warn("Failed to remove worktree", { error: String(e) });
+  }
+
+  // 3b. Delete branch (local and remote)
+  try {
+    await deleteBranch(bare, task.branch);
+  } catch (e) {
+    await log.warn("Failed to delete branch", { error: String(e) });
   }
 
   // 4. Delete task from state

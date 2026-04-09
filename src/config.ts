@@ -13,6 +13,7 @@ export const DEFAULT_CONFIG: Config = {
   notifications: false,
   tmuxMouse: true,
   tmuxStatusBar: true,
+  skipCloseConfirm: false,
   defaults: {
     program: "claude",
   },
