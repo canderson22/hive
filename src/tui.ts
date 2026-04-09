@@ -1,7 +1,7 @@
 // src/tui.ts — dashboard rendering, key dispatch, dialog flows
 
 import * as clack from "@clack/prompts";
-import type { Config, PrInfo, State, Status, Task, TaskStatus } from "./types.ts";
+import type { CiStatus, Config, PrInfo, State, Status, Task, TaskStatus } from "./types.ts";
 import { pollAll } from "./monitor.ts";
 import { attachSession, hasSession } from "./tmux.ts";
 import { closeTask, createTask, importTask, openEditor, restartTask } from "./tasks.ts";
@@ -15,12 +15,15 @@ import {
   bold,
   clearScreen,
   dim,
+  green,
   hideCursor,
+  red,
   setTitle,
   showCursor,
   statusColor,
   statusIcon,
   stripAnsi,
+  yellow,
 } from "./ansi.ts";
 import { log } from "./log.ts";
 import { notify } from "./notifications.ts";
@@ -37,6 +40,7 @@ export function renderTaskLine(
   multiRepo: boolean,
   prInfo?: PrInfo,
   depth?: number,
+  ciStatus?: CiStatus,
 ): string {
   const cursor = selected ? ">" : " ";
   const icon = statusColor(status.status, statusIcon(status.status));
@@ -55,7 +59,24 @@ export function renderTaskLine(
   const prText = prInfo ? `#${prInfo.number} ${prInfo.state}` : "—";
   const paddedPr = dim(prText) + " ".repeat(Math.max(0, 12 - prText.length));
 
-  return `${cursor} ${icon} ${paddedName} ${paddedPr} ${snippet}`;
+  // CI column
+  const ciText = ciStatus === "passed"
+    ? green("Passed")
+    : ciStatus === "failed"
+    ? red("Failed")
+    : ciStatus === "running"
+    ? yellow("Running")
+    : dim("—");
+  const ciPlain = ciStatus === "passed"
+    ? "Passed"
+    : ciStatus === "failed"
+    ? "Failed"
+    : ciStatus === "running"
+    ? "Running"
+    : "—";
+  const paddedCi = ciText + " ".repeat(Math.max(0, 8 - ciPlain.length));
+
+  return `${cursor} ${icon} ${paddedName} ${paddedPr} ${paddedCi} ${snippet}`;
 }
 
 export function formatTitle(statuses: Map<string, TaskStatus>): string {
@@ -83,6 +104,7 @@ export function renderDashboard(
   staleThresholdHours: number,
   waitingSince: Record<string, string>,
   prCache: Record<string, PrInfo>,
+  getCiStatus?: (taskId: string) => CiStatus,
 ): string {
   const lines: string[] = [];
   const now = Date.now();
@@ -116,7 +138,7 @@ export function renderDashboard(
     lines.push(dim("  No tasks. Press n to create one."));
     lines.push("");
   } else {
-    lines.push(dim("    ◦ Task                     PR           Activity"));
+    lines.push(dim("    ◦ Task                     PR           CI       Activity"));
     lines.push("");
   }
 
@@ -141,7 +163,8 @@ export function renderDashboard(
     const cacheKey = `${task.repo}:${task.branch}`;
     const prInfo = prCache[cacheKey];
     const depth = getDepth(task);
-    lines.push(renderTaskLine(task, status, i === selectedIndex, multiRepo, prInfo, depth));
+    const ci = getCiStatus ? getCiStatus(task.id) : null;
+    lines.push(renderTaskLine(task, status, i === selectedIndex, multiRepo, prInfo, depth, ci));
   }
 
   if (!showAll && stale.length > 0) {

@@ -1,7 +1,7 @@
 // src/tui_test.ts
 import { assert, assertEquals } from "@std/assert";
 import { formatTitle, renderTaskLine } from "./tui.ts";
-import type { Task, TaskStatus } from "./types.ts";
+import type { CiStatus, Task, TaskStatus } from "./types.ts";
 
 const TASK: Task = {
   id: "feature-auth",
@@ -76,4 +76,30 @@ Deno.test("formatTitle summarizes statuses", () => {
 Deno.test("formatTitle handles empty", () => {
   const title = formatTitle(new Map());
   assertEquals(title, "hive");
+});
+
+Deno.test("renderTaskLine shows Passed in CI column", () => {
+  const status: TaskStatus = { status: "idle", snippet: "" };
+  const line = renderTaskLine(TASK, status, false, false, undefined, 0, "passed");
+  assert(line.includes("Passed"));
+});
+
+Deno.test("renderTaskLine shows Failed in CI column", () => {
+  const status: TaskStatus = { status: "idle", snippet: "" };
+  const line = renderTaskLine(TASK, status, false, false, undefined, 0, "failed");
+  assert(line.includes("Failed"));
+});
+
+Deno.test("renderTaskLine shows Running in CI column", () => {
+  const status: TaskStatus = { status: "working", snippet: "" };
+  const line = renderTaskLine(TASK, status, false, false, undefined, 0, "running");
+  assert(line.includes("Running"));
+});
+
+Deno.test("renderTaskLine shows dash when CI is null", () => {
+  const status: TaskStatus = { status: "working", snippet: "" };
+  const line = renderTaskLine(TASK, status, false, false, undefined, 0, null);
+  const stripped = line.replace(/\x1b\[[0-9;]*m/g, "");
+  const dashes = stripped.split("—").length - 1;
+  assert(dashes >= 2);
 });
