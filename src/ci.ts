@@ -27,6 +27,14 @@ export async function detectTestCommand(worktreePath: string): Promise<string | 
     try {
       const pkg = JSON.parse(await Deno.readTextFile(pkgPath));
       if (pkg?.scripts?.test) {
+        // Detect package manager from lockfile
+        if (await fileExists(join(worktreePath, "pnpm-lock.yaml"))) {
+          return "pnpm test";
+        } else if (await fileExists(join(worktreePath, "yarn.lock"))) {
+          return "yarn test";
+        } else if (await fileExists(join(worktreePath, "bun.lockb")) || await fileExists(join(worktreePath, "bun.lock"))) {
+          return "bun test";
+        }
         return "npm test";
       }
     } catch {
