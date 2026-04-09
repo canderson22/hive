@@ -8,7 +8,6 @@ import { join } from "@std/path";
 
 export interface PrGuidelines {
   template?: string;
-  guidelines?: string;
 }
 
 async function readFileIfExists(path: string): Promise<string | null> {
@@ -53,37 +52,6 @@ export async function detectPrGuidelines(worktreePath: string): Promise<PrGuidel
     } catch {
       // Directory doesn't exist — skip
     }
-  }
-
-  // 2. Collect guidelines from various sources
-  const guidelineParts: string[] = [];
-
-  const contributingContent = await readFileIfExists(join(worktreePath, "CONTRIBUTING.md"));
-  if (contributingContent) guidelineParts.push(contributingContent);
-
-  const claudeContent = await readFileIfExists(join(worktreePath, "CLAUDE.md"));
-  if (claudeContent) guidelineParts.push(claudeContent);
-
-  const agentsContent = await readFileIfExists(join(worktreePath, "AGENTS.md"));
-  if (agentsContent) guidelineParts.push(agentsContent);
-
-  // 3. Check .claude/rules/ for PR-related rules
-  const rulesDir = join(worktreePath, ".claude", "rules");
-  try {
-    for await (const entry of Deno.readDir(rulesDir)) {
-      if (entry.isFile && entry.name.endsWith(".md")) {
-        const content = await Deno.readTextFile(join(rulesDir, entry.name));
-        if (/\bPR\b|pull request/i.test(content)) {
-          guidelineParts.push(content);
-        }
-      }
-    }
-  } catch {
-    // Directory doesn't exist — skip
-  }
-
-  if (guidelineParts.length > 0) {
-    result.guidelines = guidelineParts.join("\n\n");
   }
 
   return result;
@@ -154,13 +122,6 @@ export function generatePrBody(
     lines.push("_Describe how to test these changes._");
   }
 
-  if (guidelines?.guidelines) {
-    lines.push("");
-    lines.push("## Guidelines");
-    lines.push("");
-    lines.push(guidelines.guidelines);
-  }
-
   return lines.join("\n");
 }
 
@@ -194,6 +155,10 @@ export async function createPr(
   const title = generatePrTitle(task.branch, branchPrefix);
   const body = generatePrBody(commitLog, diffStat, guidelines);
 
+  // Write body to temp file to avoid shell escaping issues
+  const bodyFile = await Deno.makeTempFile({ suffix: ".md" });
+  await Deno.writeTextFile(bodyFile, body);
+
   const result = await run(
     [
       "gh",
@@ -201,8 +166,8 @@ export async function createPr(
       "create",
       "--title",
       title,
-      "--body",
-      body,
+      "--body-file",
+      bodyFile,
       "--base",
       task.baseBranch,
       "--head",
@@ -210,6 +175,9 @@ export async function createPr(
     ],
     { cwd: task.worktreePath },
   );
+
+  // Clean up temp file
+  await Deno.remove(bodyFile).catch(() => {});
 
   if (!result.success) {
     // PR might already exist

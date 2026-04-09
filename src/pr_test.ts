@@ -33,29 +33,10 @@ Deno.test("detectPrGuidelines finds PR template", async () => {
   await Deno.remove(dir, { recursive: true });
 });
 
-Deno.test("detectPrGuidelines finds CONTRIBUTING.md", async () => {
-  const dir = await Deno.makeTempDir();
-  await Deno.writeTextFile(join(dir, "CONTRIBUTING.md"), "# Contributing\nPlease include tests.");
-  const guidelines = await detectPrGuidelines(dir);
-  assertEquals(guidelines.guidelines !== undefined, true);
-  assertEquals(guidelines.guidelines!.includes("include tests"), true);
-  await Deno.remove(dir, { recursive: true });
-});
-
-Deno.test("detectPrGuidelines finds CLAUDE.md", async () => {
-  const dir = await Deno.makeTempDir();
-  await Deno.writeTextFile(join(dir, "CLAUDE.md"), "PR titles must be lowercase.");
-  const guidelines = await detectPrGuidelines(dir);
-  assertEquals(guidelines.guidelines !== undefined, true);
-  assertEquals(guidelines.guidelines!.includes("lowercase"), true);
-  await Deno.remove(dir, { recursive: true });
-});
-
 Deno.test("detectPrGuidelines returns empty for bare dir", async () => {
   const dir = await Deno.makeTempDir();
   const guidelines = await detectPrGuidelines(dir);
   assertEquals(guidelines.template, undefined);
-  assertEquals(guidelines.guidelines, undefined);
   await Deno.remove(dir, { recursive: true });
 });
 
@@ -71,42 +52,13 @@ Deno.test("generatePrBody uses template when provided", () => {
   assertEquals(body.includes("## Summary"), false);
 });
 
-Deno.test("generatePrBody appends guidelines when provided", () => {
+Deno.test("generatePrBody default format without template", () => {
   const body = generatePrBody(
     "- fix bug",
     " src/fix.ts | 5 +\n 1 file changed",
-    { guidelines: "Always include a test plan in PRs." },
   );
   assertEquals(body.includes("## Summary"), true);
-  assertEquals(body.includes("## Guidelines"), true);
-  assertEquals(body.includes("test plan"), true);
-});
-
-Deno.test("generatePrBody works with both template and guidelines", () => {
-  const body = generatePrBody(
-    "- refactor",
-    " src/main.ts | 10 +\n 1 file changed",
-    { template: "## Description\n\n## Testing\n", guidelines: "Keep PRs small." },
-  );
-  assertEquals(body.includes("## Description"), true);
-  assertEquals(body.includes("## Guidelines"), true);
-  assertEquals(body.includes("Keep PRs small"), true);
-});
-
-Deno.test("detectPrGuidelines finds rules with PR mention", async () => {
-  const dir = await Deno.makeTempDir();
-  await Deno.mkdir(join(dir, ".claude", "rules"), { recursive: true });
-  await Deno.writeTextFile(
-    join(dir, ".claude", "rules", "pr-process.md"),
-    "When creating a PR, always include a test plan.",
-  );
-  await Deno.writeTextFile(
-    join(dir, ".claude", "rules", "coding-style.md"),
-    "Use 2-space indentation.",
-  );
-  const guidelines = await detectPrGuidelines(dir);
-  assertEquals(guidelines.guidelines !== undefined, true);
-  assertEquals(guidelines.guidelines!.includes("test plan"), true);
-  assertEquals(guidelines.guidelines!.includes("indentation"), false);
-  await Deno.remove(dir, { recursive: true });
+  assertEquals(body.includes("fix bug"), true);
+  assertEquals(body.includes("## Files Changed"), true);
+  assertEquals(body.includes("## Test Notes"), true);
 });
