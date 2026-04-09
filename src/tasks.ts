@@ -33,7 +33,7 @@ export async function createTask(
   state: State,
 ): Promise<Task> {
   const repoName = repoNameFromUrl(opts.repoConfig.url);
-  const branch = opts.branchPrefix + opts.name;
+  const branch = (opts.branchPrefix || "") + opts.name;
   const baseBranch = opts.baseBranch ?? opts.repoConfig.defaultBranch;
   const home = hiveHome();
 
