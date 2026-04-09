@@ -2,6 +2,8 @@
 
 export type Status = "working" | "waiting" | "blocked" | "done" | "idle" | "stopped";
 
+export type CiStatus = "passed" | "failed" | "running" | null;
+
 export interface Task {
   id: string;
   repo: string;
@@ -24,6 +26,7 @@ export interface RepoConfig {
   url: string;
   defaultBranch: string;
   localPath?: string;
+  testCommand?: string;
 }
 
 export interface Config {
