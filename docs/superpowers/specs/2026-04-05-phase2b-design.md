@@ -48,7 +48,7 @@ GitHub Actions workflow triggered on tag push (`v*`):
 
 Homebrew tap at `canderson22/homebrew-tap`:
 - Formula downloads the binary from the GitHub release
-- Install: `brew tap canderson22/tap && brew install hive`
+- Install: `brew tap canderson22/tap && brew install hive-cli`
 
 **Files:**
 - Create `.github/workflows/release.yml`

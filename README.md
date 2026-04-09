@@ -18,7 +18,7 @@ Multi-session Claude Code coordinator — manage parallel AI agents from a singl
 
 ```bash
 brew tap canderson22/tap
-brew install hive
+brew install hive-cli
 ```
 
 ### Download binary

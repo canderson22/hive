@@ -1,10 +1,10 @@
 # docs/homebrew-formula.rb
-# Homebrew formula for hive
+# Homebrew formula for hive-cli
 # To use: create a repo called canderson22/homebrew-tap
-# and put this file at Formula/hive.rb
-# Then: brew tap canderson22/tap && brew install hive
+# and put this file at Formula/hive-cli.rb
+# Then: brew tap canderson22/tap && brew install hive-cli
 
-class Hive < Formula
+class HiveCli < Formula
   desc "Multi-session Claude Code coordinator"
   homepage "https://github.com/canderson22/hive"
   version "0.1.1"
