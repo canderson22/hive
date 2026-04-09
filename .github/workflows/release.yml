@@ -60,3 +60,75 @@ jobs:
             hive-darwin-x64
             hive-linux-x64
           generate_release_notes: true
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Compute sha256 hashes
+        id: hashes
+        run: |
+          echo "arm64=$(sha256sum hive-darwin-arm64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "x64=$(sha256sum hive-darwin-x64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "linux=$(sha256sum hive-linux-x64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Update Homebrew formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          FORMULA=$(cat <<'RUBY'
+          class HiveCli < Formula
+            desc "Multi-session Claude Code coordinator"
+            homepage "https://github.com/canderson22/hive"
+            version "__VERSION__"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/canderson22/hive/releases/download/v#{version}/hive-darwin-arm64"
+                sha256 "__SHA_ARM64__"
+
+                def install
+                  bin.install "hive-darwin-arm64" => "hive"
+                end
+              elsif Hardware::CPU.intel?
+                url "https://github.com/canderson22/hive/releases/download/v#{version}/hive-darwin-x64"
+                sha256 "__SHA_X64__"
+
+                def install
+                  bin.install "hive-darwin-x64" => "hive"
+                end
+              end
+            end
+
+            on_linux do
+              url "https://github.com/canderson22/hive/releases/download/v#{version}/hive-linux-x64"
+              sha256 "__SHA_LINUX__"
+
+              def install
+                bin.install "hive-linux-x64" => "hive"
+              end
+            end
+
+            test do
+              assert_match "hive", shell_output("#{bin}/hive --version")
+            end
+          end
+          RUBY
+
+          FORMULA="${FORMULA//__VERSION__/$VERSION}"
+          FORMULA="${FORMULA//__SHA_ARM64__/${{ steps.hashes.outputs.arm64 }}}"
+          FORMULA="${FORMULA//__SHA_X64__/${{ steps.hashes.outputs.x64 }}}"
+          FORMULA="${FORMULA//__SHA_LINUX__/${{ steps.hashes.outputs.linux }}}"
+
+          # Get current file SHA for the API update
+          FILE_SHA=$(gh api repos/canderson22/homebrew-tap/contents/Formula/hive-cli.rb --jq '.sha')
+
+          # Update the formula in the tap repo
+          echo "$FORMULA" | gh api repos/canderson22/homebrew-tap/contents/Formula/hive-cli.rb \
+            -X PUT \
+            -f message="Update hive-cli to ${VERSION}" \
+            -f content="$(echo "$FORMULA" | base64 -w0)" \
+            -f sha="$FILE_SHA"
