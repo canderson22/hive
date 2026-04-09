@@ -59,6 +59,40 @@ Deno.test("detectPrGuidelines returns empty for bare dir", async () => {
   await Deno.remove(dir, { recursive: true });
 });
 
+Deno.test("generatePrBody uses template when provided", () => {
+  const template = "## What\n\n## Why\n\n## Testing\n";
+  const body = generatePrBody(
+    "- add auth\n- add tests",
+    " src/auth.ts | 50 +++\n 1 file changed",
+    { template },
+  );
+  assertEquals(body.includes("## What"), true);
+  assertEquals(body.includes("add auth"), true);
+  assertEquals(body.includes("## Summary"), false);
+});
+
+Deno.test("generatePrBody appends guidelines when provided", () => {
+  const body = generatePrBody(
+    "- fix bug",
+    " src/fix.ts | 5 +\n 1 file changed",
+    { guidelines: "Always include a test plan in PRs." },
+  );
+  assertEquals(body.includes("## Summary"), true);
+  assertEquals(body.includes("## Guidelines"), true);
+  assertEquals(body.includes("test plan"), true);
+});
+
+Deno.test("generatePrBody works with both template and guidelines", () => {
+  const body = generatePrBody(
+    "- refactor",
+    " src/main.ts | 10 +\n 1 file changed",
+    { template: "## Description\n\n## Testing\n", guidelines: "Keep PRs small." },
+  );
+  assertEquals(body.includes("## Description"), true);
+  assertEquals(body.includes("## Guidelines"), true);
+  assertEquals(body.includes("Keep PRs small"), true);
+});
+
 Deno.test("detectPrGuidelines finds rules with PR mention", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.mkdir(join(dir, ".claude", "rules"), { recursive: true });

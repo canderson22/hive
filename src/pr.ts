@@ -99,32 +99,67 @@ export function generatePrTitle(branch: string, branchPrefix: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-export function generatePrBody(commitLog: string, diffStat: string): string {
+export function generatePrBody(
+  commitLog: string,
+  diffStat: string,
+  guidelines?: PrGuidelines,
+): string {
   const lines: string[] = [];
 
-  lines.push("## Summary");
-  lines.push("");
-  for (const line of commitLog.split("\n")) {
-    const trimmed = line.trim();
-    if (
-      trimmed && !trimmed.startsWith("commit ") && !trimmed.startsWith("Author:") &&
-      !trimmed.startsWith("Date:")
-    ) {
-      lines.push(`- ${trimmed.replace(/^- /, "")}`);
+  if (guidelines?.template) {
+    // Use the repo's PR template as the structure
+    lines.push(guidelines.template);
+    lines.push("");
+    lines.push("## Commits");
+    lines.push("");
+    for (const line of commitLog.split("\n")) {
+      const trimmed = line.trim();
+      if (
+        trimmed && !trimmed.startsWith("commit ") && !trimmed.startsWith("Author:") &&
+        !trimmed.startsWith("Date:")
+      ) {
+        lines.push(`- ${trimmed.replace(/^- /, "")}`);
+      }
     }
+    lines.push("");
+    lines.push("## Files Changed");
+    lines.push("");
+    lines.push("```");
+    lines.push(diffStat.trim());
+    lines.push("```");
+  } else {
+    // Default format
+    lines.push("## Summary");
+    lines.push("");
+    for (const line of commitLog.split("\n")) {
+      const trimmed = line.trim();
+      if (
+        trimmed && !trimmed.startsWith("commit ") && !trimmed.startsWith("Author:") &&
+        !trimmed.startsWith("Date:")
+      ) {
+        lines.push(`- ${trimmed.replace(/^- /, "")}`);
+      }
+    }
+
+    lines.push("");
+    lines.push("## Files Changed");
+    lines.push("");
+    lines.push("```");
+    lines.push(diffStat.trim());
+    lines.push("```");
+
+    lines.push("");
+    lines.push("## Test Notes");
+    lines.push("");
+    lines.push("_Describe how to test these changes._");
   }
 
-  lines.push("");
-  lines.push("## Files Changed");
-  lines.push("");
-  lines.push("```");
-  lines.push(diffStat.trim());
-  lines.push("```");
-
-  lines.push("");
-  lines.push("## Test Notes");
-  lines.push("");
-  lines.push("_Describe how to test these changes._");
+  if (guidelines?.guidelines) {
+    lines.push("");
+    lines.push("## Guidelines");
+    lines.push("");
+    lines.push(guidelines.guidelines);
+  }
 
   return lines.join("\n");
 }
@@ -153,8 +188,11 @@ export async function createPr(
   // Ensure branch is pushed
   await run(["git", "push", "-u", "origin", task.branch], { cwd: task.worktreePath });
 
+  // Detect repo PR guidelines
+  const guidelines = await detectPrGuidelines(task.worktreePath);
+
   const title = generatePrTitle(task.branch, branchPrefix);
-  const body = generatePrBody(commitLog, diffStat);
+  const body = generatePrBody(commitLog, diffStat, guidelines);
 
   const result = await run(
     [
