@@ -28,6 +28,7 @@ import {
 import { log } from "./log.ts";
 import { notify } from "./notifications.ts";
 import { startBackgroundFetch } from "./background.ts";
+import { CiManager, detectTestCommand } from "./ci.ts";
 
 const POLL_INTERVAL_MS = 1500;
 
@@ -175,7 +176,7 @@ export function renderDashboard(
   }
 
   lines.push("");
-  lines.push(dim("  n:new  s:stack  i:import  p:pr  d:close  r:restart  e:editor  ?:help  q:quit"));
+  lines.push(dim("  n:new  s:stack  i:import  p:pr  t:test  d:close  r:restart  e:editor  ?:help  q:quit"));
   lines.push("");
 
   return lines.join("\n");
@@ -413,6 +414,7 @@ function showHelp(): void {
   console.log("  d              Close task");
   console.log("  r              Restart task");
   console.log("  e              Open editor in worktree");
+  console.log("  t              Run tests");
   console.log("  a              Toggle fresh/all tasks");
   console.log("  c              Config");
   console.log("  ?              This help");
@@ -531,6 +533,7 @@ export async function runDashboard(): Promise<void> {
   let running = true;
   let lastRender = "";
   let prevStatuses = new Map<string, string>(); // taskId -> previous status
+  const ciManager = new CiManager();
 
   const taskList = () => {
     const tasks = Object.values(state.tasks);
@@ -600,6 +603,28 @@ export async function runDashboard(): Promise<void> {
         }
       }
     }
+
+    // Auto-trigger CI on idle/done transitions
+    for (const task of tasks) {
+      const ts = statuses.get(task.id);
+      if (!ts) continue;
+      const prev = prevStatuses.get(task.id);
+      if (prev !== ts.status && (ts.status === "idle" || ts.status === "done")) {
+        let testCmd = ciManager.getCachedCommand(task.repo);
+        if (testCmd === undefined) {
+          // Check config first
+          const repoEntry = Object.entries(config.repos).find(([_, rc]) =>
+            repoNameFromUrl(rc.url) === task.repo
+          );
+          testCmd = repoEntry?.[1].testCommand ?? await detectTestCommand(task.worktreePath);
+          ciManager.cacheCommand(task.repo, testCmd);
+        }
+        if (testCmd) {
+          ciManager.trigger(task.id, testCmd, task.worktreePath);
+        }
+      }
+    }
+
     prevStatuses = new Map(
       tasks.map((t) => [t.id, statuses.get(t.id)?.status ?? "stopped"]),
     );
@@ -616,6 +641,7 @@ export async function runDashboard(): Promise<void> {
       config.staleThresholdHours,
       state.waitingSince ?? {},
       state.prCache ?? {},
+      (taskId) => ciManager.getStatus(taskId),
     );
 
     if (render !== lastRender) {
@@ -964,6 +990,48 @@ export async function runDashboard(): Promise<void> {
           write(hideCursor());
           pollTimer = setInterval(poll, POLL_INTERVAL_MS);
           lastRender = "";
+          await poll();
+          continue;
+        }
+
+        if (key.key === "t" && selectedTask) {
+          let testCmd = ciManager.getCachedCommand(selectedTask.repo);
+          if (testCmd === undefined) {
+            testCmd = await detectTestCommand(selectedTask.worktreePath);
+            ciManager.cacheCommand(selectedTask.repo, testCmd);
+          }
+          if (testCmd) {
+            ciManager.trigger(selectedTask.id, testCmd, selectedTask.worktreePath);
+          } else {
+            // No test command detected — prompt user
+            clearInterval(pollTimer);
+            disableRawMode();
+            write(showCursor());
+
+            const cmd = await clack.text({
+              message: `No test command detected for ${selectedTask.repo}. Enter test command:`,
+              placeholder: "npm test",
+            });
+
+            if (!clack.isCancel(cmd) && cmd) {
+              const testCommand = (cmd as string).trim();
+              ciManager.cacheCommand(selectedTask.repo, testCommand);
+              // Save to config
+              const repoEntry = Object.entries(config.repos).find(([_, rc]) =>
+                repoNameFromUrl(rc.url) === selectedTask.repo
+              );
+              if (repoEntry) {
+                repoEntry[1].testCommand = testCommand;
+                await saveConfig(config);
+              }
+              ciManager.trigger(selectedTask.id, testCommand, selectedTask.worktreePath);
+            }
+
+            enableRawMode();
+            write(hideCursor());
+            pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+            lastRender = "";
+          }
           await poll();
           continue;
         }
