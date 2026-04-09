@@ -1,6 +1,6 @@
 {
   "name": "hive",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "tasks": {
     "dev": "deno run --allow-env --allow-read --allow-write --allow-run --allow-net cli.ts",
     "test": "deno test --allow-env --allow-read --allow-write --allow-run",

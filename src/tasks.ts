@@ -41,10 +41,8 @@ export async function createTask(
   const bare = repoPath(repoName);
   await ensureBareClone(opts.repoConfig.url, bare, opts.repoConfig.localPath);
 
-  // Fetch the base branch if it's not the default
-  if (baseBranch !== opts.repoConfig.defaultBranch) {
-    await fetchBranches(bare, [baseBranch]);
-  }
+  // Always fetch the base branch to ensure we branch from latest
+  await fetchBranches(bare, [baseBranch]);
 
   // 2. Create worktree (consume ready if available, else create fresh)
   const wtPath = worktreePath(repoName, branch);
